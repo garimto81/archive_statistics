@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: archive-stats-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=false
+      - DATABASE_URL=sqlite+aiosqlite:///./data/archive_stats.db
+      - NAS_HOST=10.10.100.122
+      - NAS_SHARE=docker
+      - NAS_PATH=GGPNAs/ARCHIVE
+      - NAS_USERNAME=GGP
+      - NAS_PASSWORD=${NAS_PASSWORD:-!@QW12qw}
+      - NAS_LOCAL_PATH=/mnt/nas
+      - CORS_ALLOW_ALL=true
+    volumes:
+      - ../data:/app/data
+      - nas_mount:/mnt/nas:ro
+    restart: unless-stopped
+    networks:
+      - archive-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: archive-stats-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - archive-network
+
+networks:
+  archive-network:
+    driver: bridge
+
+volumes:
+  nas_mount:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//10.10.100.122/docker/GGPNAs/ARCHIVE"
+      o: "username=GGP,password=${NAS_PASSWORD:-!@QW12qw},uid=1000,gid=1000,file_mode=0755,dir_mode=0755"

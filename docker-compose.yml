@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: archive-stats-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=false
+      - DATABASE_URL=sqlite+aiosqlite:///./data/archive_stats.db
+      - NAS_HOST=10.10.100.122
+      - NAS_SHARE=docker
+      - NAS_PATH=GGPNAs/ARCHIVE
+      - NAS_USERNAME=GGP
+      - NAS_PASSWORD=!@QW12qw
+      - NAS_LOCAL_PATH=/mnt/nas
+      - CORS_ALLOW_ALL=true
+    volumes:
+      - ./data:/app/data
+      - /mnt/nas:/mnt/nas:ro  # Mount NAS share on host first
+    restart: unless-stopped
+    networks:
+      - archive-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: archive-stats-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - archive-network
+
+networks:
+  archive-network:
+    driver: bridge
+
+volumes:
+  data:

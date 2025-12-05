@@ -1,9 +1,16 @@
 # PRD: Archive Statistics Dashboard
 
-**Version**: 1.1
+**Version**: 1.2
 **Date**: 2025-12-05
 **Author**: GGP Team
-**Status**: Draft
+**Status**: In Development
+
+## Changelog
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.2 | 2025-12-05 | Added real-time features: viewer count, scan logs sharing, smart duration caching |
+| 1.1 | 2025-12-05 | Added Work Status Tracker feature |
+| 1.0 | 2025-12-05 | Initial PRD |
 
 ---
 
@@ -75,39 +82,43 @@
 **Description**: 아카이브 내 파일에 대한 종합 통계 표시
 **Priority**: High
 **Effort**: Medium
+**Status**: ✅ Implemented
 
 **세부 기능**:
-- 총 파일 수 표시
-- 총 저장 용량 표시 (TB/PB 단위)
-- 총 재생시간 표시 (미디어 파일)
-- 파일 형식별 분포 차트
+- 총 파일 수 표시 ✅
+- 총 저장 용량 표시 (TB/PB 단위) ✅
+- 총 재생시간 표시 (미디어 파일) ✅
+- 파일 형식별 분포 차트 ✅
 
-### 4.2 폴더 트리 구조 뷰 ⭐ NEW
+### 4.2 폴더 트리 구조 뷰
 **Description**: 아카이브 폴더 구조를 트리맵/트리뷰로 시각화
 **Priority**: High
 **Effort**: High
+**Status**: ✅ Implemented
 
 **세부 기능**:
-- 인터랙티브 폴더 트리 뷰
-- 폴더별 용량 크기 표시 (Treemap 스타일)
-- 폴더 클릭 시 하위 구조 탐색
-- 폴더별 파일 수 및 용량 통계
-- 대용량 폴더 하이라이트
+- 인터랙티브 폴더 트리 뷰 ✅
+- 폴더별 용량 크기 표시 ✅
+- 폴더 클릭 시 하위 구조 탐색 ✅
+- 폴더별 파일 수 및 용량 통계 ✅
+- Top Folders by Size 차트 ✅
 
 ### 4.3 파일 형식별 분석
 **Description**: 파일 확장자/타입별 상세 통계
 **Priority**: High
 **Effort**: Low
+**Status**: ✅ Implemented
 
 **세부 기능**:
-- 확장자별 파일 수 및 용량
-- 미디어 타입별 분류 (Video, Audio, Image, Document, etc.)
-- 파이 차트 및 바 차트 시각화
+- 확장자별 파일 수 및 용량 ✅
+- 미디어 타입별 분류 (Video, Audio, Image, Document, etc.) ✅
+- 파이 차트 시각화 ✅
 
 ### 4.4 수동 스캔 기능
 **Description**: 사용자가 필요 시 아카이브 스캔 실행
 **Priority**: High
 **Effort**: Medium
+**Status**: ✅ Implemented
 
 **세부 기능**:
 - "스캔 시작" 버튼으로 수동 트리거
@@ -115,37 +126,74 @@
 - 마지막 스캔 시간 표시
 - 스캔 히스토리 로그
 
+### 4.4.1 실시간 스캔 상태 공유 ⭐ NEW (v1.2)
+**Description**: 다중 클라이언트 간 스캔 상태 실시간 공유
+**Priority**: High
+**Effort**: Medium
+**Status**: ✅ Implemented
+
+**세부 기능**:
+- 모든 접속 클라이언트에게 스캔 진행률 실시간 공유
+- 스캔 로그 실시간 표시 (Show Logs 버튼)
+- 미디어 파일 처리 현황 표시 (처리된 미디어 파일 수)
+- 예상 남은 시간 표시
+
+### 4.4.2 스마트 스캔 최적화 ⭐ NEW (v1.2)
+**Description**: 이미 분석된 파일 중복 처리 방지
+**Priority**: High
+**Effort**: Low
+**Status**: ✅ Implemented
+
+**세부 기능**:
+- 이미 재생시간이 분석된 미디어 파일은 재분석 건너뛰기
+- ffprobe 타임아웃 최적화 (10초)
+- probesize/analyzeduration 제한으로 빠른 분석
+
+### 4.4.3 현재 접속자 수 표시 ⭐ NEW (v1.2)
+**Description**: 현재 대시보드를 보고 있는 사용자 수 표시
+**Priority**: Medium
+**Effort**: Low
+**Status**: ✅ Implemented
+
+**세부 기능**:
+- 푸터에 "X viewers online" 표시
+- 클라이언트 ID 기반 사용자 추적
+- 30초 이상 응답 없는 클라이언트 자동 정리
+
 ### 4.5 히스토리 추적
 **Description**: 시간에 따른 변화 추이 그래프
 **Priority**: Medium
 **Effort**: Medium
+**Status**: ✅ Implemented
 
 **세부 기능**:
-- 일별/주별/월별 용량 변화 그래프
-- 파일 수 변화 추이
-- 신규/삭제 파일 통계
+- 일별/주별/월별 용량 변화 그래프 ✅
+- Storage Growth Trend 차트 ✅
+- 파일 수 변화 추이 🔄 (진행 중)
 
 ### 4.6 대시보드 알림
 **Description**: 임계치 도달 시 알림 기능
 **Priority**: Medium
 **Effort**: Medium
+**Status**: 📋 Planned
 
 **세부 기능**:
 - 용량 임계치 설정 (예: 900TB 도달 시)
 - 이메일/웹 알림
 - 급격한 변화 감지 알림
 
-### 4.7 아카이빙 작업 현황 관리 (Work Status Tracker) ⭐ NEW
+### 4.7 아카이빙 작업 현황 관리 (Work Status Tracker)
 **Description**: 아카이빙 작업 진행 상황을 추적하고 관리하는 기능
 **Priority**: High
 **Effort**: Medium
+**Status**: ✅ Implemented
 
 **세부 기능**:
-- CSV/Excel 파일 Import/Export
-- 작업 현황 대시보드 (칸반 보드 스타일)
-- 담당자(PIC)별 작업 현황
-- 카테고리별 진행률 시각화
-- 실시간 진행률 자동 계산
+- CSV/Excel 파일 Import/Export ✅
+- 작업 현황 테이블 뷰 ✅
+- 담당자(PIC)별 필터링 ✅
+- Archive별 분류 ✅
+- CRUD 작업 지원 ✅
 
 **데이터 구조** (현재 운영 중인 시트 기반):
 

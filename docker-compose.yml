@@ -20,7 +20,7 @@ services:
       - CORS_ALLOW_ALL=true
     volumes:
       - ./data:/app/data
-      - /mnt/nas:/mnt/nas:ro  # Mount NAS share on host first
+      - nas_archive:/mnt/nas:ro
     restart: unless-stopped
     networks:
       - archive-network
@@ -44,3 +44,9 @@ networks:
 
 volumes:
   data:
+  nas_archive:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: //10.10.100.122/docker/GGPNAs/ARCHIVE
+      o: "username=GGP,password=!@QW12qw,vers=3.0"

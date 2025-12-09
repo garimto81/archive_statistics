@@ -11,6 +11,9 @@ import type {
   Archive,
   ScanStatus,
   ScanHistory,
+  WorkerStatsListResponse,
+  WorkerStatsSummary,
+  WorkerDetailResponse,
 } from '../types';
 
 const api = axios.create({
@@ -159,6 +162,24 @@ export const scanApi = {
 
   getHistory: async (limit = 10): Promise<ScanHistory[]> => {
     const { data } = await api.get(`/scan/history?limit=${limit}`);
+    return data;
+  },
+};
+
+// Worker Stats API
+export const workerStatsApi = {
+  getAll: async (): Promise<WorkerStatsListResponse> => {
+    const { data } = await api.get('/worker-stats');
+    return data;
+  },
+
+  getSummary: async (): Promise<WorkerStatsSummary> => {
+    const { data } = await api.get('/worker-stats/summary');
+    return data;
+  },
+
+  getByPic: async (pic: string): Promise<WorkerDetailResponse> => {
+    const { data } = await api.get(`/worker-stats/${encodeURIComponent(pic)}`);
     return data;
   },
 };

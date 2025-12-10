@@ -1,12 +1,20 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from typing import List, Optional
 
 from app.core.database import get_db
 from app.models.file_stats import FolderStats, FileStats
 from app.schemas.stats import FolderTreeNode, FolderDetails, FileTypeStats
 from app.services.utils import format_size, format_duration
+
+
+def parse_extensions(extensions: Optional[str]) -> Optional[List[str]]:
+    """Parse comma-separated extensions into list with leading dots"""
+    if not extensions:
+        return None
+    return [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",") if e.strip()]
+
 
 router = APIRouter()
 
@@ -15,9 +23,12 @@ router = APIRouter()
 async def get_folder_tree(
     path: Optional[str] = Query(default=None, description="Parent path to start from"),
     depth: int = Query(default=2, ge=1, le=10, description="Depth of tree to return"),
+    extensions: Optional[str] = Query(default=None, description="Comma-separated extensions filter"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get folder tree structure"""
+    """Get folder tree structure with optional extension filter"""
+
+    ext_list = parse_extensions(extensions)
 
     # Build query based on path
     if path:
@@ -34,6 +45,27 @@ async def get_folder_tree(
     result = await db.execute(query.order_by(FolderStats.total_size.desc()))
     folders = result.scalars().all()
 
+    async def get_filtered_stats(folder_path: str) -> dict:
+        """Get file stats filtered by extensions for a folder"""
+        if not ext_list:
+            return None
+
+        stats_result = await db.execute(
+            select(
+                func.count(FileStats.id).label("file_count"),
+                func.sum(FileStats.size).label("total_size"),
+                func.sum(FileStats.duration).label("total_duration"),
+            )
+            .where(FileStats.folder_path.like(f"{folder_path}%"))
+            .where(FileStats.extension.in_(ext_list))
+        )
+        row = stats_result.first()
+        return {
+            "file_count": row.file_count or 0,
+            "total_size": row.total_size or 0,
+            "total_duration": row.total_duration or 0.0,
+        }
+
     async def build_tree(folder: FolderStats, current_depth: int) -> FolderTreeNode:
         children = []
         if current_depth < depth:
@@ -47,6 +79,22 @@ async def get_folder_tree(
             children = [
                 await build_tree(child, current_depth + 1) for child in child_folders
             ]
+
+        # Apply extension filter if specified
+        if ext_list:
+            filtered = await get_filtered_stats(folder.path)
+            return FolderTreeNode(
+                id=folder.id,
+                name=folder.name,
+                path=folder.path,
+                size=filtered["total_size"],
+                size_formatted=format_size(filtered["total_size"]),
+                file_count=filtered["file_count"],
+                folder_count=folder.folder_count,
+                duration=filtered["total_duration"],
+                depth=folder.depth,
+                children=children,
+            )
 
         return FolderTreeNode(
             id=folder.id,
@@ -152,7 +200,3 @@ async def get_top_folders(
         )
         for folder in folders
     ]
-
-
-# Import func for SQL aggregate functions
-from sqlalchemy import func

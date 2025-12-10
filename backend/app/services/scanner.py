@@ -14,11 +14,53 @@ from app.core.config import settings
 from app.models.file_stats import FileStats, FolderStats
 from app.services.utils import get_mime_type
 
-# Video/Audio extensions that support duration extraction
+# Keywords to exclude (duplicate/variant files)
+# Matches both -clean and _clean, -stream and _stream, etc.
+EXCLUDE_KEYWORDS = {'clean', 'stream', 'proxy', 'lowres', 'temp', 'backup'}
+
+# Media extensions (for duration extraction via ffprobe)
 MEDIA_EXTENSIONS = {
     '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg',
     '.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'
 }
+
+# Video extensions for work tracking (used by WorkStatus)
+VIDEO_EXTENSIONS_FOR_WORK = {'.mp4'}
+
+
+def should_include_file(filename: str, extension: str) -> bool:
+    """Check if file should be included in scan.
+
+    Rules (configurable via settings.SCAN_ALL_FILES):
+    1. SCAN_ALL_FILES=True: 모든 파일 스캔 (제외 확장자만 필터)
+    2. SCAN_ALL_FILES=False: 미디어 파일만 스캔
+    3. Exclude files with variant keywords (clean, stream, etc.)
+    """
+    ext_lower = extension.lower()
+
+    # Check excluded extensions from config
+    if ext_lower in [e.lower() for e in settings.EXCLUDED_EXTENSIONS]:
+        return False
+
+    # If not scanning all files, only include media extensions
+    if not settings.SCAN_ALL_FILES:
+        if ext_lower not in MEDIA_EXTENSIONS:
+            return False
+
+    # Check for excluded keywords (before extension)
+    name_without_ext = filename.rsplit('.', 1)[0].lower()
+
+    for keyword in EXCLUDE_KEYWORDS:
+        # Check for -keyword or _keyword at the end or followed by - or _
+        if name_without_ext.endswith(f'-{keyword}') or name_without_ext.endswith(f'_{keyword}'):
+            return False
+        # Also check for patterns like -clean-002 or _clean_v2
+        if f'-{keyword}-' in name_without_ext or f'_{keyword}_' in name_without_ext:
+            return False
+        if f'-{keyword}_' in name_without_ext or f'_{keyword}-' in name_without_ext:
+            return False
+
+    return True
 
 
 class ArchiveScanner:
@@ -79,6 +121,11 @@ class ArchiveScanner:
 
             try:
                 if entry.is_file():
+                    # Check if file should be included (based on settings.SCAN_ALL_FILES)
+                    ext = Path(entry.name).suffix.lower()
+                    if not should_include_file(entry.name, ext):
+                        continue  # Skip excluded files
+
                     # Process file
                     file_info = await self._process_file(entry, path)
                     folder_stats["total_size"] += file_info["size"]

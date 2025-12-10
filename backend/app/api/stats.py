@@ -18,33 +18,68 @@ router = APIRouter()
 
 
 @router.get("/summary", response_model=StatsSummary)
-async def get_stats_summary(db: AsyncSession = Depends(get_db)):
-    """Get overall archive statistics summary"""
+async def get_stats_summary(
+    extensions: Optional[str] = Query(None, description="Comma-separated extensions filter (e.g., mp4,mkv,avi)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get overall archive statistics summary with optional extension filter"""
 
-    # Get totals from folder stats (root folder)
-    result = await db.execute(
-        select(
-            func.sum(FolderStats.total_size).label("total_size"),
-            func.sum(FolderStats.file_count).label("total_files"),
-            func.count(FolderStats.id).label("total_folders"),
-            func.sum(FolderStats.total_duration).label("total_duration"),
-        ).where(FolderStats.depth == 0)
-    )
-    stats = result.first()
+    # Parse extensions filter
+    ext_list = None
+    if extensions:
+        ext_list = [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",") if e.strip()]
 
-    # If folder duration is 0, get it directly from files (fallback)
-    total_duration = stats.total_duration or 0.0
-    if total_duration == 0:
-        duration_result = await db.execute(
-            select(func.sum(FileStats.duration))
+    # If filtering by extensions, get stats directly from FileStats
+    if ext_list:
+        query = select(
+            func.count(FileStats.id).label("total_files"),
+            func.sum(FileStats.size).label("total_size"),
+            func.sum(FileStats.duration).label("total_duration"),
+        ).where(FileStats.extension.in_(ext_list))
+
+        result = await db.execute(query)
+        stats = result.first()
+
+        total_files = stats.total_files or 0
+        total_size = stats.total_size or 0
+        total_duration = stats.total_duration or 0.0
+
+        # Count folders containing these files
+        folder_result = await db.execute(
+            select(func.count(func.distinct(FileStats.folder_path)))
+            .where(FileStats.extension.in_(ext_list))
         )
-        total_duration = duration_result.scalar() or 0.0
+        total_folders = folder_result.scalar() or 0
+        file_type_count = len(ext_list)
+    else:
+        # No filter - get totals from folder stats (root folder)
+        result = await db.execute(
+            select(
+                func.sum(FolderStats.total_size).label("total_size"),
+                func.sum(FolderStats.file_count).label("total_files"),
+                func.count(FolderStats.id).label("total_folders"),
+                func.sum(FolderStats.total_duration).label("total_duration"),
+            ).where(FolderStats.depth == 0)
+        )
+        stats = result.first()
 
-    # Get unique file type count
-    type_result = await db.execute(
-        select(func.count(func.distinct(FileStats.extension)))
-    )
-    file_type_count = type_result.scalar() or 0
+        total_files = stats.total_files or 0
+        total_size = stats.total_size or 0
+        total_duration = stats.total_duration or 0.0
+        total_folders = stats.total_folders or 0
+
+        # If folder duration is 0, get it directly from files (fallback)
+        if total_duration == 0:
+            duration_result = await db.execute(
+                select(func.sum(FileStats.duration))
+            )
+            total_duration = duration_result.scalar() or 0.0
+
+        # Get unique file type count
+        type_result = await db.execute(
+            select(func.count(func.distinct(FileStats.extension)))
+        )
+        file_type_count = type_result.scalar() or 0
 
     # Get last scan time
     scan_result = await db.execute(
@@ -55,15 +90,13 @@ async def get_stats_summary(db: AsyncSession = Depends(get_db)):
     )
     last_scan = scan_result.scalar()
 
-    total_size = stats.total_size or 0
-
     return StatsSummary(
-        total_files=stats.total_files or 0,
+        total_files=total_files,
         total_size=total_size,
         total_size_formatted=format_size(total_size),
         total_duration=total_duration,
         total_duration_formatted=format_duration(total_duration),
-        total_folders=stats.total_folders or 0,
+        total_folders=total_folders,
         file_type_count=file_type_count,
         last_scan_at=last_scan,
     )
@@ -72,20 +105,28 @@ async def get_stats_summary(db: AsyncSession = Depends(get_db)):
 @router.get("/file-types", response_model=List[FileTypeStats])
 async def get_file_type_stats(
     limit: int = Query(default=20, ge=1, le=100),
+    extensions: Optional[str] = Query(None, description="Comma-separated extensions filter"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get file statistics by extension/type"""
+    """Get file statistics by extension/type with optional filter"""
 
-    result = await db.execute(
-        select(
-            FileStats.extension,
-            func.count(FileStats.id).label("file_count"),
-            func.sum(FileStats.size).label("total_size"),
-        )
-        .group_by(FileStats.extension)
-        .order_by(func.sum(FileStats.size).desc())
-        .limit(limit)
+    # Parse extensions filter
+    ext_list = None
+    if extensions:
+        ext_list = [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",") if e.strip()]
+
+    query = select(
+        FileStats.extension,
+        func.count(FileStats.id).label("file_count"),
+        func.sum(FileStats.size).label("total_size"),
     )
+
+    if ext_list:
+        query = query.where(FileStats.extension.in_(ext_list))
+
+    query = query.group_by(FileStats.extension).order_by(func.sum(FileStats.size).desc()).limit(limit)
+
+    result = await db.execute(query)
     rows = result.all()
 
     # Calculate total for percentage
@@ -101,6 +142,22 @@ async def get_file_type_stats(
         )
         for row in rows
     ]
+
+
+@router.get("/available-extensions", response_model=List[str])
+async def get_available_extensions(db: AsyncSession = Depends(get_db)):
+    """Get list of all available file extensions in the archive"""
+
+    result = await db.execute(
+        select(FileStats.extension)
+        .where(FileStats.extension.isnot(None))
+        .group_by(FileStats.extension)
+        .order_by(func.count(FileStats.id).desc())
+    )
+    extensions = [row[0] for row in result.all() if row[0]]
+
+    # Remove the leading dot for cleaner display
+    return [ext.lstrip('.') for ext in extensions]
 
 
 @router.get("/history", response_model=HistoryResponse)

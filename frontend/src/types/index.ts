@@ -19,6 +19,25 @@ export interface FileTypeStats {
   percentage: number;
 }
 
+// Codec Statistics Types
+export interface CodecStats {
+  codec_name: string;
+  codec_type: 'video' | 'audio';
+  file_count: number;
+  total_size: number;
+  total_size_formatted: string;
+  total_duration: number;
+  total_duration_formatted: string;
+  percentage: number;
+}
+
+export interface CodecSummary {
+  video_codecs: CodecStats[];
+  audio_codecs: CodecStats[];
+  total_video_files: number;
+  total_audio_analyzed: number;
+}
+
 export interface FolderTreeNode {
   id: number;
   name: string;
@@ -168,4 +187,141 @@ export interface WorkerStatsListResponse {
 
 export interface WorkerDetailResponse extends WorkerStats {
   tasks: WorkerTask[];
+}
+
+// Data Sources Types
+export interface DataSourceStatus {
+  name: string;
+  type: string;
+  enabled: boolean;
+  status: string;
+  last_sync: string | null;
+  next_sync: string | null;
+  record_count: number;
+  details: {
+    created?: number;
+    updated?: number;
+    worksheets?: number;
+    note?: string;
+  } | null;
+}
+
+export interface AllDataSourcesResponse {
+  archive_db: DataSourceStatus;
+  metadata_db: DataSourceStatus;
+  iconik_db: DataSourceStatus;
+}
+
+export interface WorkStatusSummary {
+  total_tasks: number;
+  completed: number;
+  in_progress: number;
+  pending: number;
+  overall_progress: number;
+  last_sync: string | null;
+}
+
+export interface HandAnalysisSummary {
+  total_hands: number;
+  worksheets_count: number;
+  by_worksheet: Array<{ worksheet: string; count: number }>;
+  last_sync: string | null;
+}
+
+// Progress Types (간트차트용)
+
+/**
+ * WorkSummary - 폴더별 작업 진행률 요약
+ * Backend progress_service.py에서 생성되며, 하이어라키 합산값을 포함
+ */
+export interface WorkSummary {
+  task_count: number;           // 직접 매칭된 작업 수
+  total_files: number;          // NAS 파일 수 (진행률 계산 기준)
+  total_done: number;           // excel_done 합계
+  combined_progress: number;    // NAS 기준 진행률 (90%+ = 100%)
+  sheets_total_videos: number;  // 구글 시트 total_videos
+  sheets_excel_done: number;    // 구글 시트 excel_done
+  actual_progress?: number;     // 시트 기준 진행률 (optional)
+  data_source_mismatch?: boolean; // NAS vs 시트 불일치 여부
+  mismatch_count?: number;      // 차이값
+}
+
+export interface WorkStatusInfo {
+  id: number;
+  category: string;
+  pic: string | null;
+  status: string;
+  total_videos: number;
+  excel_done: number;
+  progress_percent: number;
+  notes1: string | null;
+  notes2: string | null;
+}
+
+export interface HandAnalysisInfo {
+  worksheet: string;
+  hand_count: number;
+  max_timecode_sec: number;
+  max_timecode_formatted: string;
+}
+
+export interface MetadataProgress {
+  hand_count: number;
+  max_timecode_sec: number;
+  max_timecode_formatted: string;
+  progress_percent: number;
+  is_complete: boolean;
+}
+
+export interface FileWithProgress {
+  id: number;
+  name: string;
+  path: string;
+  size: number;
+  size_formatted: string;
+  duration: number;
+  duration_formatted: string;
+  extension: string | null;
+  metadata_progress?: MetadataProgress;
+}
+
+export interface FolderWithProgress {
+  id: number;
+  name: string;
+  path: string;
+  size: number;
+  size_formatted: string;
+  file_count: number;
+  folder_count: number;
+  duration: number;
+  duration_formatted: string;
+  depth: number;
+  // Progress 데이터 (Backend work_summary 기반)
+  work_summary?: WorkSummary;       // 트리 뷰용 요약 (하이어라키 합산 포함)
+  work_statuses?: WorkStatusInfo[]; // 상세 패널용 목록
+  work_status?: WorkStatusInfo;     // deprecated: 하위 호환용
+  hand_analysis?: HandAnalysisInfo;
+  children: FolderWithProgress[];
+  files?: FileWithProgress[];
+}
+
+export interface ProgressSummary {
+  nas: {
+    total_folders: number;
+    total_files: number;
+  };
+  archive_db: {
+    total_tasks: number;
+    completed: number;
+    in_progress: number;
+  };
+  metadata_db: {
+    total_hands: number;
+    worksheets: number;
+    matched_files: number;
+  };
+  matching: {
+    files_with_hands: number;
+    match_rate: number;
+  };
 }

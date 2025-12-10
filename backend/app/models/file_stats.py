@@ -43,6 +43,10 @@ class FileStats(Base):
     size = Column(BigInteger, default=0)  # bytes
     duration = Column(Float, nullable=True)  # seconds (for media files)
 
+    # Codec info (extracted via ffprobe)
+    video_codec = Column(String, nullable=True)  # e.g., h264, hevc, vp9
+    audio_codec = Column(String, nullable=True)  # e.g., aac, mp3, opus
+
     # Timestamps
     file_created_at = Column(DateTime, nullable=True)
     file_modified_at = Column(DateTime, nullable=True)

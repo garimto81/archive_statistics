@@ -11,6 +11,8 @@ from app.schemas.stats import (
     FileTypeStats,
     HistoryData,
     HistoryResponse,
+    CodecStats,
+    CodecSummary,
 )
 from app.services.utils import format_size, format_duration
 
@@ -203,4 +205,105 @@ async def get_history(
         period=period,
         start_date=start_date,
         end_date=end_date,
+    )
+
+
+@router.get("/codecs", response_model=CodecSummary)
+async def get_codec_stats(
+    limit: int = Query(default=10, ge=1, le=50),
+    extensions: Optional[str] = Query(None, description="Comma-separated extensions filter"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get codec statistics for video and audio files"""
+
+    # Parse extensions filter
+    ext_list = None
+    if extensions:
+        ext_list = [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",") if e.strip()]
+
+    # Query video codecs
+    video_query = select(
+        FileStats.video_codec,
+        func.count(FileStats.id).label("file_count"),
+        func.sum(FileStats.size).label("total_size"),
+        func.sum(FileStats.duration).label("total_duration"),
+    ).where(FileStats.video_codec.isnot(None))
+
+    if ext_list:
+        video_query = video_query.where(FileStats.extension.in_(ext_list))
+
+    video_query = video_query.group_by(FileStats.video_codec).order_by(
+        func.count(FileStats.id).desc()
+    ).limit(limit)
+
+    video_result = await db.execute(video_query)
+    video_rows = video_result.all()
+
+    # Query audio codecs
+    audio_query = select(
+        FileStats.audio_codec,
+        func.count(FileStats.id).label("file_count"),
+        func.sum(FileStats.size).label("total_size"),
+        func.sum(FileStats.duration).label("total_duration"),
+    ).where(FileStats.audio_codec.isnot(None))
+
+    if ext_list:
+        audio_query = audio_query.where(FileStats.extension.in_(ext_list))
+
+    audio_query = audio_query.group_by(FileStats.audio_codec).order_by(
+        func.count(FileStats.id).desc()
+    ).limit(limit)
+
+    audio_result = await db.execute(audio_query)
+    audio_rows = audio_result.all()
+
+    # Calculate totals for percentages
+    total_video_size = sum(row.total_size or 0 for row in video_rows)
+    total_audio_size = sum(row.total_size or 0 for row in audio_rows)
+
+    # Count total files with codec info
+    video_count_query = select(func.count(FileStats.id)).where(FileStats.video_codec.isnot(None))
+    audio_count_query = select(func.count(FileStats.id)).where(FileStats.audio_codec.isnot(None))
+
+    if ext_list:
+        video_count_query = video_count_query.where(FileStats.extension.in_(ext_list))
+        audio_count_query = audio_count_query.where(FileStats.extension.in_(ext_list))
+
+    total_video_files = (await db.execute(video_count_query)).scalar() or 0
+    total_audio_analyzed = (await db.execute(audio_count_query)).scalar() or 0
+
+    # Build response
+    video_codecs = [
+        CodecStats(
+            codec_name=row.video_codec,
+            codec_type="video",
+            file_count=row.file_count,
+            total_size=row.total_size or 0,
+            total_size_formatted=format_size(row.total_size or 0),
+            total_duration=row.total_duration or 0.0,
+            total_duration_formatted=format_duration(row.total_duration or 0.0),
+            percentage=(row.total_size / total_video_size * 100) if total_video_size > 0 else 0,
+        )
+        for row in video_rows
+    ]
+
+    audio_codecs = [
+        CodecStats(
+            codec_name=row.audio_codec,
+            codec_type="audio",
+            file_count=row.file_count,
+            total_size=row.total_size or 0,
+            total_size_formatted=format_size(row.total_size or 0),
+            total_duration=row.total_duration or 0.0,
+            total_duration_formatted=format_duration(row.total_duration or 0.0),
+            percentage=(row.total_size / total_audio_size * 100) if total_audio_size > 0 else 0,
+        )
+        for row in audio_rows
+    ]
+
+    return CodecSummary(
+        video_codecs=video_codecs,
+        audio_codecs=audio_codecs,
+        total_video_files=total_video_files,
+        total_audio_analyzed=total_audio_analyzed,
     )

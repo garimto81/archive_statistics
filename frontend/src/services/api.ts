@@ -19,6 +19,7 @@ import type {
   HandAnalysisSummary,
   FolderWithProgress,
   ProgressSummary,
+  CodecSummary,
 } from '../types';
 
 const api = axios.create({
@@ -57,6 +58,16 @@ export const statsApi = {
 
   getAvailableExtensions: async (): Promise<string[]> => {
     const { data } = await api.get('/stats/available-extensions');
+    return data;
+  },
+
+  getCodecs: async (limit = 10, extensions?: string[]): Promise<CodecSummary> => {
+    const params = new URLSearchParams();
+    params.append('limit', limit.toString());
+    if (extensions && extensions.length > 0) {
+      params.append('extensions', extensions.join(','));
+    }
+    const { data } = await api.get(`/stats/codecs?${params}`);
     return data;
   },
 };
@@ -269,12 +280,16 @@ export const progressApi = {
   getTreeWithProgress: async (
     path?: string,
     depth = 2,
-    includeFiles = false
+    includeFiles = false,
+    extensions?: string[]
   ): Promise<FolderWithProgress[]> => {
     const params = new URLSearchParams();
     if (path) params.append('path', path);
     params.append('depth', depth.toString());
     params.append('include_files', includeFiles.toString());
+    if (extensions && extensions.length > 0) {
+      params.append('extensions', extensions.join(','));
+    }
     const { data } = await api.get(`/progress/tree?${params}`);
     return data;
   },
@@ -298,8 +313,13 @@ export const progressApi = {
     return data;
   },
 
-  getSummary: async (): Promise<ProgressSummary> => {
-    const { data } = await api.get('/progress/summary');
+  getSummary: async (extensions?: string[]): Promise<ProgressSummary> => {
+    const params = new URLSearchParams();
+    if (extensions && extensions.length > 0) {
+      params.append('extensions', extensions.join(','));
+    }
+    const url = params.toString() ? `/progress/summary?${params}` : '/progress/summary';
+    const { data } = await api.get(url);
     return data;
   },
 };

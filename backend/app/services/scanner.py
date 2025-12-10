@@ -166,16 +166,21 @@ class ArchiveScanner:
                 self.files_processed / self.state["total_files_estimated"] * 100
             )
 
-    def _get_media_duration(self, file_path: str) -> float:
-        """Extract media duration using ffprobe (optimized)"""
+    def _get_media_info(self, file_path: str) -> Dict[str, Any]:
+        """Extract media duration and codec info using ffprobe (optimized)
+
+        Returns:
+            dict with keys: duration, video_codec, audio_codec
+        """
+        result_info = {"duration": 0.0, "video_codec": None, "audio_codec": None}
+
         try:
-            # Use faster options: only read format info, limit probe size
+            # Use faster options: read format and stream info, limit probe size
             result = subprocess.run(
                 [
                     'ffprobe',
                     '-v', 'error',
-                    '-select_streams', 'v:0',  # Only first video stream
-                    '-show_entries', 'format=duration',
+                    '-show_entries', 'format=duration:stream=codec_name,codec_type',
                     '-of', 'json',
                     '-probesize', '5000000',  # Limit probe size to 5MB
                     '-analyzeduration', '5000000',  # Limit analyze duration
@@ -188,8 +193,19 @@ class ArchiveScanner:
 
             if result.returncode == 0:
                 data = json.loads(result.stdout)
-                duration = float(data.get('format', {}).get('duration', 0))
-                return duration
+
+                # Extract duration
+                result_info["duration"] = float(data.get('format', {}).get('duration', 0))
+
+                # Extract codec info from streams
+                for stream in data.get('streams', []):
+                    codec_type = stream.get('codec_type')
+                    codec_name = stream.get('codec_name')
+                    if codec_type == 'video' and not result_info["video_codec"]:
+                        result_info["video_codec"] = codec_name
+                    elif codec_type == 'audio' and not result_info["audio_codec"]:
+                        result_info["audio_codec"] = codec_name
+
         except subprocess.TimeoutExpired:
             self._add_log(f"⏱️ Timeout: {os.path.basename(file_path)}")
         except json.JSONDecodeError:
@@ -197,7 +213,11 @@ class ArchiveScanner:
         except Exception as e:
             self._add_log(f"❌ Error: {os.path.basename(file_path)} - {str(e)[:50]}")
 
-        return 0.0
+        return result_info
+
+    def _get_media_duration(self, file_path: str) -> float:
+        """Extract media duration using ffprobe (legacy compatibility)"""
+        return self._get_media_info(file_path)["duration"]
 
     def _add_log(self, message: str):
         """Add log message to shared state"""
@@ -224,19 +244,27 @@ class ArchiveScanner:
             )
             existing = result.scalar_one_or_none()
 
-            # Determine if we need to extract duration
+            # Determine if we need to extract media info (duration + codec)
             duration = 0.0
+            video_codec = None
+            audio_codec = None
             if ext in MEDIA_EXTENSIONS:
-                # Skip duration extraction if already analyzed (has duration > 0)
-                if existing and existing.duration > 0:
+                # Skip extraction if already analyzed (has duration > 0 AND codec info)
+                if existing and existing.duration > 0 and existing.video_codec:
                     duration = existing.duration
+                    video_codec = existing.video_codec
+                    audio_codec = existing.audio_codec
                     self.state["media_files_processed"] = self.state.get("media_files_processed", 0) + 1
                     self.state["total_duration_found"] = self.state.get("total_duration_found", 0.0) + duration
                 else:
                     # Run ffprobe in thread pool to not block async loop
-                    duration = await asyncio.get_event_loop().run_in_executor(
-                        None, self._get_media_duration, entry.path
+                    media_info = await asyncio.get_event_loop().run_in_executor(
+                        None, self._get_media_info, entry.path
                     )
+                    duration = media_info["duration"]
+                    video_codec = media_info["video_codec"]
+                    audio_codec = media_info["audio_codec"]
+
                     # Update shared state for media tracking
                     self.state["media_files_processed"] = self.state.get("media_files_processed", 0) + 1
                     self.state["total_duration_found"] = self.state.get("total_duration_found", 0.0) + duration
@@ -256,11 +284,18 @@ class ArchiveScanner:
                 "file_created_at": datetime.fromtimestamp(stat.st_ctime),
                 "file_modified_at": datetime.fromtimestamp(stat.st_mtime),
                 "duration": duration,
+                "video_codec": video_codec,
+                "audio_codec": audio_codec,
             }
 
             if existing:
-                # Update existing (only if size or mtime changed, or duration was 0)
-                if existing.size != stat.st_size or existing.duration == 0:
+                # Update existing (if size changed, duration is 0, or codec info missing)
+                needs_update = (
+                    existing.size != stat.st_size or
+                    existing.duration == 0 or
+                    (ext in MEDIA_EXTENSIONS and not existing.video_codec)
+                )
+                if needs_update:
                     for key, value in file_info.items():
                         if key != "path":
                             setattr(existing, key, value)

@@ -42,8 +42,8 @@ export default function Dashboard() {
   });
 
   const { data: progressSummary } = useQuery({
-    queryKey: ['progress-summary'],
-    queryFn: progressApi.getSummary,
+    queryKey: ['progress-summary', extensionsArray],
+    queryFn: () => progressApi.getSummary(extensionsArray),
     refetchInterval: 60000,
   });
 
@@ -111,6 +111,7 @@ export default function Dashboard() {
           <FolderTreeWithProgress
             initialDepth={3}
             showFiles={true}
+            selectedExtensions={extensionsArray}
             onFolderSelect={handleFolderSelect}
             onFileSelect={handleFileSelect}
           />

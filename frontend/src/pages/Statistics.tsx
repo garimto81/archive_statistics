@@ -26,6 +26,7 @@ import {
 } from 'recharts';
 import { Files, HardDrive, Clock, FileType } from 'lucide-react';
 import StatCard from '../components/StatCard';
+import CodecStats from '../components/CodecStats';
 import { statsApi, foldersApi } from '../services/api';
 
 // Constants
@@ -225,6 +226,9 @@ export default function Statistics() {
           </div>
         </div>
       </div>
+
+      {/* Codec Distribution */}
+      <CodecStats />
 
       {/* Storage Growth Trend */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">

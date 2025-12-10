@@ -21,6 +21,11 @@ import type {
   ProgressSummary,
   CodecSummary,
   CodecsByExtensionResponse,
+  UnmappedFolder,
+  FolderMapping,
+  WorkStatusOption,
+  AutoMatchResult,
+  BulkConnectResult,
 } from '../types';
 
 const api = axios.create({
@@ -329,6 +334,60 @@ export const progressApi = {
     }
     const url = params.toString() ? `/progress/summary?${params}` : '/progress/summary';
     const { data } = await api.get(url);
+    return data;
+  },
+};
+
+// Folder Mapping API - 폴더-작업 연결 관리
+export const folderMappingApi = {
+  getUnmapped: async (params?: {
+    min_depth?: number;
+    max_depth?: number;
+    min_files?: number;
+    limit?: number;
+  }): Promise<UnmappedFolder[]> => {
+    const searchParams = new URLSearchParams();
+    if (params?.min_depth !== undefined) searchParams.append('min_depth', params.min_depth.toString());
+    if (params?.max_depth !== undefined) searchParams.append('max_depth', params.max_depth.toString());
+    if (params?.min_files !== undefined) searchParams.append('min_files', params.min_files.toString());
+    if (params?.limit !== undefined) searchParams.append('limit', params.limit.toString());
+    const { data } = await api.get(`/folder-mapping/unmapped?${searchParams}`);
+    return data;
+  },
+
+  getMapped: async (workStatusId?: number, limit = 100): Promise<FolderMapping[]> => {
+    const params = new URLSearchParams();
+    if (workStatusId) params.append('work_status_id', workStatusId.toString());
+    params.append('limit', limit.toString());
+    const { data } = await api.get(`/folder-mapping/mapped?${params}`);
+    return data;
+  },
+
+  getWorkStatusOptions: async (): Promise<WorkStatusOption[]> => {
+    const { data } = await api.get('/folder-mapping/work-status-options');
+    return data;
+  },
+
+  connect: async (folderPath: string, workStatusId: number): Promise<FolderMapping> => {
+    const { data } = await api.post('/folder-mapping/connect', {
+      folder_path: folderPath,
+      work_status_id: workStatusId,
+    });
+    return data;
+  },
+
+  connectBulk: async (mappings: Array<{ folder_path: string; work_status_id: number }>): Promise<BulkConnectResult> => {
+    const { data } = await api.post('/folder-mapping/connect-bulk', { mappings });
+    return data;
+  },
+
+  disconnect: async (folderId: number): Promise<{ message: string; folder_id: number }> => {
+    const { data } = await api.delete(`/folder-mapping/disconnect/${folderId}`);
+    return data;
+  },
+
+  autoMatch: async (dryRun = true): Promise<AutoMatchResult> => {
+    const { data } = await api.post(`/folder-mapping/auto-match?dry_run=${dryRun}`);
     return data;
   },
 };

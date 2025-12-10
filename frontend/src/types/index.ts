@@ -344,3 +344,48 @@ export interface ProgressSummary {
     match_rate: number;
   };
 }
+
+// Folder Mapping Types (폴더-작업 연결 관리)
+
+export interface UnmappedFolder {
+  id: number;
+  path: string;
+  name: string;
+  depth: number;
+  file_count: number;
+}
+
+export interface FolderMapping {
+  folder_id: number;
+  folder_path: string;
+  folder_name: string;
+  work_status_id: number | null;
+  work_status_category: string | null;
+}
+
+export interface WorkStatusOption {
+  id: number;
+  category: string;
+  archive_name: string | null;
+  total_videos: number;
+  excel_done: number;
+}
+
+export interface AutoMatchResult {
+  dry_run: boolean;
+  total_unmatched: number;
+  matched_count: number;
+  matches: Array<{
+    folder_id: number;
+    folder_path: string;
+    folder_name: string;
+    work_status_id: number;
+    work_status_category: string;
+  }>;
+}
+
+export interface BulkConnectResult {
+  success_count: number;
+  error_count: number;
+  errors: string[];
+}

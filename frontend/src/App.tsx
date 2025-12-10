@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Folders from './pages/Folders';
 import WorkStatus from './pages/WorkStatus';
 import Statistics from './pages/Statistics';
+import Settings from './pages/Settings';
 
 // Placeholder pages
 const PlaceholderPage = ({ title }: { title: string }) => (
@@ -24,7 +25,7 @@ export default function App() {
           <Route path="/statistics" element={<Statistics />} />
           <Route path="/history" element={<PlaceholderPage title="History" />} />
           <Route path="/alerts" element={<PlaceholderPage title="Alerts" />} />
-          <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>
     </BrowserRouter>

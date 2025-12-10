@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 from functools import lru_cache
 
 
@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     # App
     APP_NAME: str = "Archive Statistics Dashboard"
-    APP_VERSION: str = "1.1.0"
+    APP_VERSION: str = "1.2.0"
     DEBUG: bool = True
 
     # API
@@ -36,6 +36,25 @@ class Settings(BaseSettings):
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_FROM: Optional[str] = None
+
+    # Google Sheets Sync
+    GOOGLE_SERVICE_ACCOUNT_FILE: str = "service_account_key.json"
+    SHEETS_SYNC_ENABLED: bool = True
+    SHEETS_SYNC_INTERVAL_MINUTES: int = 30
+
+    # Work Status Sheet (Sheet 3)
+    WORK_STATUS_SHEET_URL: str = "https://docs.google.com/spreadsheets/d/1xuN4_1mQME_SVwnI7445JuLd8K7tRS9HDNYYJi2fm2k"
+
+    # Hand Analysis Sheet (WSOP Circuit LA - 8 worksheets)
+    HAND_ANALYSIS_SYNC_ENABLED: bool = True
+    HAND_ANALYSIS_SHEET_URL: str = "https://docs.google.com/spreadsheets/d/1_RN_W_ZQclSZA0Iez6XniCXVtjkkd5HNZwiT6l-z6d4"
+
+    # Scanner Settings
+    SCAN_ALL_FILES: bool = True  # True: 모든 파일 스캔, False: 미디어만
+    EXCLUDED_EXTENSIONS: List[str] = [
+        '.tmp', '.bak', '.log', '.DS_Store', '.thumbs', '.db',
+        '.ini', '.cfg', '.cache', '.lock'
+    ]
 
     # CORS - LAN access enabled
     CORS_ORIGINS: list = [

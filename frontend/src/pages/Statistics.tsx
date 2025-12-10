@@ -38,7 +38,7 @@ const HISTORY_DAYS = 30;
 export default function Statistics() {
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['stats-summary'],
-    queryFn: statsApi.getSummary,
+    queryFn: () => statsApi.getSummary(),
   });
 
   const { data: fileTypes } = useQuery({

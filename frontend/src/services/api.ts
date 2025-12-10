@@ -14,6 +14,11 @@ import type {
   WorkerStatsListResponse,
   WorkerStatsSummary,
   WorkerDetailResponse,
+  AllDataSourcesResponse,
+  WorkStatusSummary,
+  HandAnalysisSummary,
+  FolderWithProgress,
+  ProgressSummary,
 } from '../types';
 
 const api = axios.create({
@@ -25,13 +30,23 @@ const api = axios.create({
 
 // Stats API
 export const statsApi = {
-  getSummary: async (): Promise<StatsSummary> => {
-    const { data } = await api.get('/stats/summary');
+  getSummary: async (extensions?: string[]): Promise<StatsSummary> => {
+    const params = new URLSearchParams();
+    if (extensions && extensions.length > 0) {
+      params.append('extensions', extensions.join(','));
+    }
+    const url = params.toString() ? `/stats/summary?${params}` : '/stats/summary';
+    const { data } = await api.get(url);
     return data;
   },
 
-  getFileTypes: async (limit = 20): Promise<FileTypeStats[]> => {
-    const { data } = await api.get(`/stats/file-types?limit=${limit}`);
+  getFileTypes: async (limit = 20, extensions?: string[]): Promise<FileTypeStats[]> => {
+    const params = new URLSearchParams();
+    params.append('limit', limit.toString());
+    if (extensions && extensions.length > 0) {
+      params.append('extensions', extensions.join(','));
+    }
+    const { data } = await api.get(`/stats/file-types?${params}`);
     return data;
   },
 
@@ -39,14 +54,22 @@ export const statsApi = {
     const { data } = await api.get(`/stats/history?period=${period}&days=${days}`);
     return data;
   },
+
+  getAvailableExtensions: async (): Promise<string[]> => {
+    const { data } = await api.get('/stats/available-extensions');
+    return data;
+  },
 };
 
 // Folders API
 export const foldersApi = {
-  getTree: async (path?: string, depth = 2): Promise<FolderTreeNode[]> => {
+  getTree: async (path?: string, depth = 2, extensions?: string[]): Promise<FolderTreeNode[]> => {
     const params = new URLSearchParams();
     if (path) params.append('path', path);
     params.append('depth', depth.toString());
+    if (extensions && extensions.length > 0) {
+      params.append('extensions', extensions.join(','));
+    }
     const { data } = await api.get(`/folders/tree?${params}`);
     return data;
   },
@@ -180,6 +203,103 @@ export const workerStatsApi = {
 
   getByPic: async (pic: string): Promise<WorkerDetailResponse> => {
     const { data } = await api.get(`/worker-stats/${encodeURIComponent(pic)}`);
+    return data;
+  },
+};
+
+// Sync API - Google Sheets Synchronization
+export interface SyncStatus {
+  enabled: boolean;
+  status: 'idle' | 'syncing' | 'error';
+  last_sync: string | null;
+  next_sync: string | null;
+  error: string | null;
+  interval_minutes: number;
+  last_result: {
+    total_records: number;
+    synced_count: number;
+    created_count: number;
+    updated_count: number;
+  } | null;
+}
+
+export interface SyncTriggerResponse {
+  success: boolean;
+  synced_at: string;
+  total_records: number;
+  synced_count: number;
+  created_count: number;
+  updated_count: number;
+  error: string | null;
+  message: string;
+}
+
+export const syncApi = {
+  getStatus: async (): Promise<SyncStatus> => {
+    const { data } = await api.get('/sync/status');
+    return data;
+  },
+
+  trigger: async (): Promise<SyncTriggerResponse> => {
+    const { data } = await api.post('/sync/trigger');
+    return data;
+  },
+};
+
+// Data Sources API - 통합 데이터 소스 상태
+export const dataSourcesApi = {
+  getStatus: async (): Promise<AllDataSourcesResponse> => {
+    const { data } = await api.get('/data-sources/status');
+    return data;
+  },
+
+  getWorkStatusSummary: async (): Promise<WorkStatusSummary> => {
+    const { data } = await api.get('/data-sources/work-status/summary');
+    return data;
+  },
+
+  getHandAnalysisSummary: async (): Promise<HandAnalysisSummary> => {
+    const { data } = await api.get('/data-sources/hand-analysis/summary');
+    return data;
+  },
+};
+
+// Progress API - 간트차트용 폴더 트리 + 진행률
+export const progressApi = {
+  getTreeWithProgress: async (
+    path?: string,
+    depth = 2,
+    includeFiles = false
+  ): Promise<FolderWithProgress[]> => {
+    const params = new URLSearchParams();
+    if (path) params.append('path', path);
+    params.append('depth', depth.toString());
+    params.append('include_files', includeFiles.toString());
+    const { data } = await api.get(`/progress/tree?${params}`);
+    return data;
+  },
+
+  getFolderDetail: async (
+    folderPath: string,
+    includeFiles = true
+  ): Promise<FolderWithProgress> => {
+    const params = new URLSearchParams();
+    params.append('include_files', includeFiles.toString());
+    const { data } = await api.get(
+      `/progress/folder/${encodeURIComponent(folderPath)}?${params}`
+    );
+    return data;
+  },
+
+  getFileDetail: async (filePath: string) => {
+    const { data } = await api.get(
+      `/progress/file/${encodeURIComponent(filePath)}`
+    );
+    return data;
+  },
+
+  getSummary: async (): Promise<ProgressSummary> => {
+    const { data } = await api.get('/progress/summary');
     return data;
   },
 };

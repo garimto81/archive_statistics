@@ -13,6 +13,9 @@ from app.schemas.stats import (
     HistoryResponse,
     CodecStats,
     CodecSummary,
+    CodecCount,
+    ExtensionCodecStats,
+    CodecsByExtensionResponse,
 )
 from app.services.utils import format_size, format_duration
 
@@ -306,4 +309,103 @@ async def get_codec_stats(
         audio_codecs=audio_codecs,
         total_video_files=total_video_files,
         total_audio_analyzed=total_audio_analyzed,
+    )
+
+
+@router.get("/codecs-by-extension", response_model=CodecsByExtensionResponse)
+async def get_codecs_by_extension(
+    limit: int = Query(default=10, ge=1, le=50, description="Max extensions to return"),
+    codec_limit: int = Query(default=5, ge=1, le=20, description="Max codecs per extension"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get codec distribution grouped by file extension.
+
+    Returns the top N extensions with their video/audio codec breakdown.
+    """
+
+    # Step 1: Get top extensions by file count (only those with codec info)
+    ext_query = select(
+        FileStats.extension,
+        func.count(FileStats.id).label("file_count"),
+    ).where(
+        FileStats.video_codec.isnot(None)
+    ).group_by(
+        FileStats.extension
+    ).order_by(
+        func.count(FileStats.id).desc()
+    ).limit(limit)
+
+    ext_result = await db.execute(ext_query)
+    top_extensions = ext_result.all()
+
+    extensions_data = []
+
+    for ext_row in top_extensions:
+        extension = ext_row.extension or "unknown"
+        total_files = ext_row.file_count
+
+        # Step 2: Get video codec distribution for this extension
+        video_query = select(
+            FileStats.video_codec,
+            func.count(FileStats.id).label("count"),
+        ).where(
+            FileStats.extension == ext_row.extension,
+            FileStats.video_codec.isnot(None),
+        ).group_by(
+            FileStats.video_codec
+        ).order_by(
+            func.count(FileStats.id).desc()
+        ).limit(codec_limit)
+
+        video_result = await db.execute(video_query)
+        video_rows = video_result.all()
+        video_total = sum(r.count for r in video_rows)
+
+        video_codecs = [
+            CodecCount(
+                codec_name=row.video_codec,
+                file_count=row.count,
+                percentage=(row.count / video_total * 100) if video_total > 0 else 0,
+            )
+            for row in video_rows
+        ]
+
+        # Step 3: Get audio codec distribution for this extension
+        audio_query = select(
+            FileStats.audio_codec,
+            func.count(FileStats.id).label("count"),
+        ).where(
+            FileStats.extension == ext_row.extension,
+            FileStats.audio_codec.isnot(None),
+        ).group_by(
+            FileStats.audio_codec
+        ).order_by(
+            func.count(FileStats.id).desc()
+        ).limit(codec_limit)
+
+        audio_result = await db.execute(audio_query)
+        audio_rows = audio_result.all()
+        audio_total = sum(r.count for r in audio_rows)
+
+        audio_codecs = [
+            CodecCount(
+                codec_name=row.audio_codec,
+                file_count=row.count,
+                percentage=(row.count / audio_total * 100) if audio_total > 0 else 0,
+            )
+            for row in audio_rows
+        ]
+
+        extensions_data.append(
+            ExtensionCodecStats(
+                extension=extension,
+                total_files=total_files,
+                video_codecs=video_codecs,
+                audio_codecs=audio_codecs,
+            )
+        )
+
+    return CodecsByExtensionResponse(
+        extensions=extensions_data,
+        total_extensions=len(extensions_data),
     )

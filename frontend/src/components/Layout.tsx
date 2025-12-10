@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -15,6 +15,9 @@ import {
   Clock,
   Film,
   Users,
+  ChevronDown,
+  Zap,
+  Database,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { scanApi } from '../services/api';
@@ -42,11 +45,26 @@ const navItems = [
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
+type ScanType = 'incremental' | 'full';
+
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const queryClient = useQueryClient();
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
+  const [showScanMenu, setShowScanMenu] = useState(false);
+  const scanMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (scanMenuRef.current && !scanMenuRef.current.contains(event.target as Node)) {
+        setShowScanMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Poll scan status - always poll to show status from other clients
   const { data: scanStatus } = useQuery({
@@ -57,21 +75,23 @@ export default function Layout({ children }: LayoutProps) {
 
   // Start scan mutation
   const startScanMutation = useMutation({
-    mutationFn: () => scanApi.start('full'),
+    mutationFn: (scanType: ScanType) => scanApi.start(scanType),
     onSuccess: (data) => {
       setScanMessage(data.message);
       queryClient.invalidateQueries({ queryKey: ['scan-status'] });
       setTimeout(() => setScanMessage(null), 3000);
+      setShowScanMenu(false);
     },
     onError: () => {
       setScanMessage('Scan failed to start');
       setTimeout(() => setScanMessage(null), 3000);
+      setShowScanMenu(false);
     },
   });
 
-  const handleScanClick = () => {
+  const handleScanClick = (scanType: ScanType) => {
     if (!scanStatus?.is_scanning) {
-      startScanMutation.mutate();
+      startScanMutation.mutate(scanType);
     }
   };
 
@@ -88,7 +108,7 @@ export default function Layout({ children }: LayoutProps) {
                 Archive Statistics
               </h1>
               <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
-                v1.10.0 | 전체 파일 스캔 + 확장자 필터
+                v1.15.0 | 확장자별 코덱 분포
               </span>
             </div>
 
@@ -150,23 +170,55 @@ export default function Layout({ children }: LayoutProps) {
                   </button>
                 </div>
               )}
-              <button
-                onClick={handleScanClick}
-                disabled={isScanning}
-                className={clsx(
-                  'flex items-center px-4 py-2 rounded-lg transition-colors',
-                  isScanning
-                    ? 'bg-gray-400 cursor-not-allowed text-white'
-                    : 'bg-primary-600 hover:bg-primary-700 text-white'
-                )}
-              >
+              {/* Scan Button with Dropdown */}
+              <div className="relative" ref={scanMenuRef}>
                 {isScanning ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <button
+                    disabled
+                    className="flex items-center px-4 py-2 rounded-lg bg-gray-400 cursor-not-allowed text-white"
+                  >
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Scanning...
+                  </button>
                 ) : (
-                  <RefreshCw className="w-4 h-4 mr-2" />
+                  <>
+                    <button
+                      onClick={() => setShowScanMenu(!showScanMenu)}
+                      className="flex items-center px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Scan
+                      <ChevronDown className="w-4 h-4 ml-1" />
+                    </button>
+
+                    {/* Dropdown Menu */}
+                    {showScanMenu && (
+                      <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                        <button
+                          onClick={() => handleScanClick('incremental')}
+                          className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-start gap-3"
+                        >
+                          <Zap className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <div className="font-medium text-gray-900">Quick Scan</div>
+                            <div className="text-xs text-gray-500">신규/변경 파일만 스캔 (권장)</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => handleScanClick('full')}
+                          className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-start gap-3"
+                        >
+                          <Database className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <div className="font-medium text-gray-900">Full Scan</div>
+                            <div className="text-xs text-gray-500">전체 NAS 폴더 스캔</div>
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
-                {isScanning ? 'Scanning...' : 'Scan Now'}
-              </button>
+              </div>
             </div>
           </div>
         </div>

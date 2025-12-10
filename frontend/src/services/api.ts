@@ -20,6 +20,7 @@ import type {
   FolderWithProgress,
   ProgressSummary,
   CodecSummary,
+  CodecsByExtensionResponse,
 } from '../types';
 
 const api = axios.create({
@@ -68,6 +69,14 @@ export const statsApi = {
       params.append('extensions', extensions.join(','));
     }
     const { data } = await api.get(`/stats/codecs?${params}`);
+    return data;
+  },
+
+  getCodecsByExtension: async (limit = 10, codecLimit = 5): Promise<CodecsByExtensionResponse> => {
+    const params = new URLSearchParams();
+    params.append('limit', limit.toString());
+    params.append('codec_limit', codecLimit.toString());
+    const { data } = await api.get(`/stats/codecs-by-extension?${params}`);
     return data;
   },
 };

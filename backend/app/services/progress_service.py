@@ -181,6 +181,14 @@ class ProgressService:
 
         return hand_data
 
+    def _normalize_folder_name(self, name: str) -> str:
+        """폴더명 정규화: 하이픈/밑줄을 공백으로 변환"""
+        # 하이픈, 밑줄 → 공백으로 변환
+        normalized = re.sub(r'[-_]', ' ', name.lower())
+        # 연속 공백 제거
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        return normalized
+
     def _match_work_statuses(
         self,
         folder_name: str,
@@ -192,7 +200,10 @@ class ProgressService:
         매칭 전략 (우선순위):
         1. 정확히 일치 (카테고리 == 폴더명)
         2. 카테고리가 폴더명으로 시작 (예: "PAD S12" starts with "PAD")
-        3. 폴더명이 카테고리에 독립 단어로 포함 (공백으로 분리된 단어)
+        3. 폴더명이 카테고리로 시작 (예: "GOG 최종" → "GOG")
+        4. 연도+키워드 조합 매칭 (예: "2025 WSOP-LAS VEGAS" → "2025 WSOP")
+        5. 폴더명이 카테고리에 독립 단어로 포함 (공백으로 분리된 단어)
+        6. 연도 매칭
 
         주의: 부분 문자열 매칭(substring)은 의도하지 않은 매칭을 유발하므로 제외
         - 예: "WSOP" in "WSOP Europe" → 허용 (독립 단어)
@@ -203,13 +214,23 @@ class ProgressService:
         """
         matched = []
         folder_lower = folder_name.lower()
+        # 하이픈/밑줄을 공백으로 변환한 정규화 버전
+        folder_normalized = self._normalize_folder_name(folder_name)
+        folder_words = set(folder_normalized.split())
 
         for category, ws in work_statuses.items():
             category_lower = category.lower()
+            category_normalized = self._normalize_folder_name(category)
+            category_words = set(category_normalized.split())
 
             # 1. 정확히 일치
             if folder_lower == category_lower:
                 matched.append((ws, 1.0, 'exact'))
+                continue
+
+            # 1.5. 정규화 후 정확히 일치 (하이픈/밑줄 차이만 있는 경우)
+            if folder_normalized == category_normalized:
+                matched.append((ws, 0.98, 'exact_normalized'))
                 continue
 
             # 2. 카테고리가 폴더명으로 시작 (예: "PAD S12" → "PAD")
@@ -224,14 +245,22 @@ class ProgressService:
                 matched.append((ws, 0.85, 'folder_prefix'))
                 continue
 
-            # 3. 폴더명이 카테고리에 독립 단어로 포함 (공백으로 분리된 단어)
+            # 3. 연도+키워드 조합 매칭 (핵심 개선!)
+            # 예: 폴더 "2025 WSOP-LAS VEGAS" → 카테고리 "2025 WSOP"
+            # 카테고리의 모든 단어가 폴더에 포함되어야 함
+            if len(category_words) >= 2 and category_words.issubset(folder_words):
+                # 카테고리 단어 수가 많을수록 더 정확한 매칭
+                score = 0.88 + (len(category_words) * 0.01)  # 2단어: 0.90, 3단어: 0.91 등
+                matched.append((ws, min(score, 0.94), 'subset'))
+                continue
+
+            # 4. 폴더명이 카테고리에 독립 단어로 포함 (공백으로 분리된 단어)
             # 예: "2023 WSOP Paradise"에서 "WSOP"는 독립 단어로 매칭됨
-            category_words = category_lower.split()
             if folder_lower in category_words:
                 matched.append((ws, 0.8, 'word'))
                 continue
 
-            # 4. 연도 매칭: 폴더명이 4자리 숫자(연도)인 경우 카테고리에 해당 연도가 있으면 매칭
+            # 5. 연도 매칭: 폴더명이 4자리 숫자(연도)인 경우 카테고리에 해당 연도가 있으면 매칭
             if folder_lower.isdigit() and len(folder_lower) == 4:
                 # 연도도 독립 단어로만 매칭 (1973이 19730에 매칭되는 것 방지)
                 if folder_lower in category_words:

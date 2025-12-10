@@ -104,3 +104,27 @@ class CodecSummary(BaseModel):
     audio_codecs: List[CodecStats]
     total_video_files: int
     total_audio_analyzed: int
+
+
+class CodecCount(BaseModel):
+    """Simple codec count for by-extension view"""
+
+    codec_name: str
+    file_count: int
+    percentage: float
+
+
+class ExtensionCodecStats(BaseModel):
+    """Codec distribution for a single extension"""
+
+    extension: str
+    total_files: int
+    video_codecs: List[CodecCount]
+    audio_codecs: List[CodecCount]
+
+
+class CodecsByExtensionResponse(BaseModel):
+    """Codec distribution grouped by file extension"""
+
+    extensions: List[ExtensionCodecStats]
+    total_extensions: int

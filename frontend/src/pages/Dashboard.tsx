@@ -41,9 +41,12 @@ export default function Dashboard() {
     queryFn: () => statsApi.getSummary(extensionsArray),
   });
 
+  // selectedFolder.path를 progressSummary 필터에 연동
+  const selectedFolderPath = selectedFolder?.path;
+
   const { data: progressSummary } = useQuery({
-    queryKey: ['progress-summary', extensionsArray],
-    queryFn: () => progressApi.getSummary(extensionsArray),
+    queryKey: ['progress-summary', extensionsArray, selectedFolderPath],
+    queryFn: () => progressApi.getSummary(extensionsArray, selectedFolderPath),
     refetchInterval: 60000,
   });
 
@@ -170,6 +173,23 @@ export default function Dashboard() {
           {progressSummary && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
               <h4 className="font-semibold text-gray-900 mb-3 text-sm">Progress Summary</h4>
+              {/* Active Filter Display */}
+              {selectedFolderPath && (
+                <div className="mb-3 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-blue-700 font-medium">📁 Filtered by:</span>
+                    <button
+                      onClick={() => setSelectedFolder(null)}
+                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-1 truncate" title={selectedFolderPath}>
+                    {selectedFolderPath.split('/').slice(-2).join('/')}
+                  </p>
+                </div>
+              )}
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500">NAS Folders</span>

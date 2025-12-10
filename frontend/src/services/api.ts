@@ -26,6 +26,7 @@ import type {
   WorkStatusOption,
   AutoMatchResult,
   BulkConnectResult,
+  CodecTreeNode,
 } from '../types';
 
 const api = axios.create({
@@ -82,6 +83,39 @@ export const statsApi = {
     params.append('limit', limit.toString());
     params.append('codec_limit', codecLimit.toString());
     const { data } = await api.get(`/stats/codecs-by-extension?${params}`);
+    return data;
+  },
+
+  /**
+   * 코덱 트리 조회 - 폴더 구조 + 코덱 정보
+   * Progress Overview와 유사한 트리 뷰로 코덱 정보 표시
+   */
+  getCodecTree: async (
+    path?: string,
+    depth = 2,
+    includeFiles = false
+  ): Promise<CodecTreeNode[]> => {
+    const params = new URLSearchParams();
+    if (path) params.append('path', path);
+    params.append('depth', depth.toString());
+    params.append('include_files', includeFiles.toString());
+    const { data } = await api.get(`/stats/codecs/tree?${params}`);
+    return data;
+  },
+
+  /**
+   * 특정 폴더의 코덱 상세 정보 조회
+   * 폴더 클릭 시 해당 폴더의 파일 목록 + 코덱 정보 표시
+   */
+  getCodecFolderDetail: async (
+    folderPath: string,
+    includeFiles = true
+  ): Promise<CodecTreeNode> => {
+    const params = new URLSearchParams();
+    params.append('include_files', includeFiles.toString());
+    const { data } = await api.get(
+      `/stats/codecs/folder/${encodeURIComponent(folderPath)}?${params}`
+    );
     return data;
   },
 };
@@ -295,12 +329,14 @@ export const progressApi = {
     path?: string,
     depth = 2,
     includeFiles = false,
-    extensions?: string[]
+    extensions?: string[],
+    includeCodecs = false
   ): Promise<FolderWithProgress[]> => {
     const params = new URLSearchParams();
     if (path) params.append('path', path);
     params.append('depth', depth.toString());
     params.append('include_files', includeFiles.toString());
+    params.append('include_codecs', includeCodecs.toString());
     if (extensions && extensions.length > 0) {
       params.append('extensions', extensions.join(','));
     }
@@ -327,8 +363,9 @@ export const progressApi = {
     return data;
   },
 
-  getSummary: async (extensions?: string[]): Promise<ProgressSummary> => {
+  getSummary: async (extensions?: string[], path?: string): Promise<ProgressSummary> => {
     const params = new URLSearchParams();
+    if (path) params.append('path', path);
     if (extensions && extensions.length > 0) {
       params.append('extensions', extensions.join(','));
     }

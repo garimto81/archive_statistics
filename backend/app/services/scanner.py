@@ -66,11 +66,34 @@ def should_include_file(filename: str, extension: str) -> bool:
 class ArchiveScanner:
     """Scanner for archive directory"""
 
-    def __init__(self, db: AsyncSession, state: Dict[str, Any]):
+    def __init__(
+        self,
+        db: AsyncSession,
+        state: Dict[str, Any],
+        scan_type: str = "full"
+    ):
         self.db = db
         self.state = state
+        self.scan_type = scan_type  # "full" or "incremental"
         self.files_processed = 0
+        self.files_skipped = 0  # Incremental mode: unchanged files
+        self.files_new = 0
+        self.files_updated = 0
         self.folders_processed = 0
+        self.last_scan_time: Optional[datetime] = None
+
+    async def _get_last_scan_time(self) -> Optional[datetime]:
+        """Get the last successful scan completion time"""
+        from app.models.file_stats import ScanHistory
+
+        result = await self.db.execute(
+            select(ScanHistory)
+            .where(ScanHistory.status == "completed")
+            .order_by(ScanHistory.completed_at.desc())
+            .limit(1)
+        )
+        last_scan = result.scalar_one_or_none()
+        return last_scan.completed_at if last_scan else None
 
     def _get_archive_path(self) -> str:
         """Get the full archive path"""
@@ -86,8 +109,26 @@ class ArchiveScanner:
         if subpath:
             base_path = os.path.join(base_path, subpath)
 
+        # For incremental scan, get last scan time
+        if self.scan_type == "incremental":
+            self.last_scan_time = await self._get_last_scan_time()
+            if self.last_scan_time:
+                self._add_log(f"🔄 Incremental scan: checking files since {self.last_scan_time.strftime('%Y-%m-%d %H:%M')}")
+            else:
+                self._add_log("⚠️ No previous scan found, running full scan")
+                self.scan_type = "full"  # Fallback to full scan
+        else:
+            self._add_log("📂 Full scan mode")
+
         try:
             await self._scan_directory(base_path, depth=0)
+
+            # Log final statistics
+            if self.scan_type == "incremental":
+                self._add_log(
+                    f"✅ Scan complete: {self.files_new} new, {self.files_updated} updated, "
+                    f"{self.files_skipped} unchanged"
+                )
         except Exception as e:
             print(f"Scan error: {e}")
             raise
@@ -233,16 +274,31 @@ class ArchiveScanner:
             self.state["logs"] = self.state["logs"][-100:]
 
     async def _process_file(self, entry: os.DirEntry, folder_path: str) -> Dict[str, Any]:
-        """Process a single file"""
+        """Process a single file
+
+        In incremental mode, skip files that haven't been modified since last scan.
+        """
         try:
             stat = entry.stat()
             ext = Path(entry.name).suffix.lower()
+            file_mtime = datetime.fromtimestamp(stat.st_mtime)
 
             # Check if file exists in DB first
             result = await self.db.execute(
                 select(FileStats).where(FileStats.path == entry.path)
             )
             existing = result.scalar_one_or_none()
+
+            # INCREMENTAL MODE: Skip unchanged files
+            if self.scan_type == "incremental" and existing and self.last_scan_time:
+                # File hasn't been modified since last scan - skip it
+                if file_mtime <= self.last_scan_time:
+                    self.files_skipped += 1
+                    # Return existing data for folder stats calculation
+                    return {
+                        "size": existing.size,
+                        "duration": existing.duration or 0.0,
+                    }
 
             # Determine if we need to extract media info (duration + codec)
             duration = 0.0
@@ -282,7 +338,7 @@ class ArchiveScanner:
                 "mime_type": get_mime_type(ext),
                 "size": stat.st_size,
                 "file_created_at": datetime.fromtimestamp(stat.st_ctime),
-                "file_modified_at": datetime.fromtimestamp(stat.st_mtime),
+                "file_modified_at": file_mtime,
                 "duration": duration,
                 "video_codec": video_codec,
                 "audio_codec": audio_codec,
@@ -296,11 +352,13 @@ class ArchiveScanner:
                     (ext in MEDIA_EXTENSIONS and not existing.video_codec)
                 )
                 if needs_update:
+                    self.files_updated += 1
                     for key, value in file_info.items():
                         if key != "path":
                             setattr(existing, key, value)
             else:
                 # Create new
+                self.files_new += 1
                 db_file = FileStats(**file_info)
                 self.db.add(db_file)
 

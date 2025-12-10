@@ -114,6 +114,7 @@ async def start_scan(
         run_scan,
         scan_history.id,
         request.path,
+        request.scan_type,
     )
 
     return ScanStartResponse(
@@ -123,13 +124,13 @@ async def start_scan(
     )
 
 
-async def run_scan(scan_id: int, path: Optional[str] = None):
+async def run_scan(scan_id: int, path: Optional[str] = None, scan_type: str = "full"):
     """Background scan task"""
     from app.core.database import async_session_maker
 
     async with async_session_maker() as db:
         try:
-            scanner = ArchiveScanner(db, _scan_state)
+            scanner = ArchiveScanner(db, _scan_state, scan_type=scan_type)
             await scanner.scan(path)
 
             # Update scan history

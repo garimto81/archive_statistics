@@ -127,3 +127,45 @@ export interface ScanHistory {
   completed_at: string | null;
   error_message: string | null;
 }
+
+// Worker Stats Types
+export interface WorkerTask {
+  id: number;
+  archive_id: number;
+  archive_name: string | null;
+  category: string;
+  status: string;
+  total_videos: number;
+  excel_done: number;
+  progress_percent: number;
+  notes1: string | null;
+  notes2: string | null;
+}
+
+export interface WorkerStats {
+  pic: string;
+  task_count: number;
+  total_videos: number;
+  total_done: number;
+  progress_percent: number;
+  archives: string[];
+  status_breakdown: Record<string, number>;
+}
+
+export interface WorkerStatsSummary {
+  total_workers: number;
+  total_videos: number;
+  total_done: number;
+  overall_progress: number;
+  by_status: Record<string, number>;
+  by_archive: Record<string, number>;
+}
+
+export interface WorkerStatsListResponse {
+  workers: WorkerStats[];
+  summary: WorkerStatsSummary;
+}
+
+export interface WorkerDetailResponse extends WorkerStats {
+  tasks: WorkerTask[];
+}

@@ -83,10 +83,13 @@ export default function Layout({ children }: LayoutProps) {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-primary-700">
                 Archive Statistics
               </h1>
+              <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                v1.5.0 | folder_prefix 매칭 전략 추가
+              </span>
             </div>
 
             {/* Navigation */}

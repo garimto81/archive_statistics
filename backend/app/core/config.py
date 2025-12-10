@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     # App
     APP_NAME: str = "Archive Statistics Dashboard"
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "1.1.0"
     DEBUG: bool = True
 
     # API

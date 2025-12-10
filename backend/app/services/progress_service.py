@@ -95,6 +95,7 @@ class ProgressService:
         path: Optional[str] = None,
         depth: int = 2,
         include_files: bool = False,
+        extensions: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
         폴더 트리와 진행률 정보를 함께 반환
@@ -104,6 +105,7 @@ class ProgressService:
             path: 시작 경로 (None이면 루트)
             depth: 탐색 깊이
             include_files: 파일 목록 포함 여부
+            extensions: 확장자 필터 목록 (예: ['.mp4', '.mkv'])
         """
         # Step 1: Work Status 전체 로드 (archive db)
         work_statuses = await self._load_work_statuses(db)
@@ -125,7 +127,7 @@ class ProgressService:
         tree = []
         for folder in folders:
             folder_data = await self._build_folder_progress(
-                db, folder, work_statuses, hand_data, depth, 0, include_files
+                db, folder, work_statuses, hand_data, depth, 0, include_files, extensions
             )
             tree.append(folder_data)
 
@@ -297,6 +299,7 @@ class ProgressService:
         max_depth: int,
         current_depth: int,
         include_files: bool,
+        extensions: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """폴더 데이터 구축 (archive db + metadata db 통합)"""
 
@@ -372,7 +375,7 @@ class ProgressService:
         folder_dict["work_status"] = work_statuses_matched[0] if work_statuses_matched else None
 
         # === metadata db: 파일 기반 Hand Analysis 집계 ===
-        files_progress = await self._get_files_with_matching(db, folder.path, hand_data)
+        files_progress = await self._get_files_with_matching(db, folder.path, hand_data, extensions)
 
         # 현재 폴더의 직접 파일 통계
         direct_files_count = len(files_progress)
@@ -415,7 +418,7 @@ class ProgressService:
             for child in child_folders:
                 child_data = await self._build_folder_progress(
                     db, child, work_statuses, hand_data,
-                    max_depth, current_depth + 1, include_files
+                    max_depth, current_depth + 1, include_files, extensions
                 )
                 children.append(child_data)
 
@@ -532,13 +535,17 @@ class ProgressService:
         db: AsyncSession,
         folder_path: str,
         hand_data: Dict[str, Dict],
+        extensions: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """폴더 내 파일들과 Hand Analysis 매칭"""
+        query = select(FileStats).where(FileStats.folder_path == folder_path)
+
+        # 확장자 필터 적용
+        if extensions:
+            query = query.where(FileStats.extension.in_(extensions))
+
         file_result = await db.execute(
-            select(FileStats)
-            .where(FileStats.folder_path == folder_path)
-            .order_by(FileStats.name)
-            .limit(200)
+            query.order_by(FileStats.name).limit(200)
         )
         files = file_result.scalars().all()
 

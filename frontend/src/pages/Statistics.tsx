@@ -9,6 +9,7 @@
  * Issue: #5
  * Block: progress.dashboard
  */
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   PieChart,
@@ -27,7 +28,12 @@ import { Files, HardDrive, Clock, FileType } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import { statsApi, foldersApi } from '../services/api';
 
-const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#6B7280'];
+// Constants
+const CHART_COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#6B7280'];
+const TOP_FILE_TYPES_LIMIT = 5;
+const TOP_FOLDERS_LIMIT = 5;
+const FILE_TYPES_TABLE_LIMIT = 10;
+const HISTORY_DAYS = 30;
 
 export default function Statistics() {
   const { data: summary, isLoading: summaryLoading } = useQuery({
@@ -37,21 +43,24 @@ export default function Statistics() {
 
   const { data: fileTypes } = useQuery({
     queryKey: ['file-types'],
-    queryFn: () => statsApi.getFileTypes(10),
+    queryFn: () => statsApi.getFileTypes(FILE_TYPES_TABLE_LIMIT),
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const { data: history } = useQuery({
     queryKey: ['history'],
-    queryFn: () => statsApi.getHistory('daily', 30),
+    queryFn: () => statsApi.getHistory('daily', HISTORY_DAYS),
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: folderTree } = useQuery({
     queryKey: ['folder-tree-stats'],
     queryFn: () => foldersApi.getTree(undefined, 1),
+    staleTime: 5 * 60 * 1000,
   });
 
-  // Transform history data for chart
-  const chartData =
+  // Memoized: Transform history data for chart
+  const chartData = useMemo(() =>
     history?.data?.map((item) => ({
       date: new Date(item.date).toLocaleDateString('ko-KR', {
         month: 'short',
@@ -59,30 +68,36 @@ export default function Statistics() {
       }),
       size: Math.round(item.total_size / (1024 * 1024 * 1024 * 1024)), // Convert to TB
       files: item.total_files,
-    })) || [];
+    })) || []
+  , [history]);
 
-  // Pie chart data
-  const pieData =
-    fileTypes?.slice(0, 5).map((type) => ({
+  // Memoized: Pie chart data
+  const pieData = useMemo(() =>
+    fileTypes?.slice(0, TOP_FILE_TYPES_LIMIT).map((type) => ({
       name: type.extension || 'unknown',
       value: type.percentage,
       count: type.file_count,
       size: type.total_size_formatted,
-    })) || [];
+    })) || []
+  , [fileTypes]);
 
-  // Top folders data (sorted by size)
-  const topFolders =
-    folderTree
-      ?.sort((a, b) => b.size - a.size)
-      .slice(0, 5)
+  // Memoized: Top folders data (sorted by size, avoid mutation)
+  const topFolders = useMemo(() => {
+    if (!folderTree || folderTree.length === 0) return [];
+
+    // Calculate total size for proper percentage
+    const totalSize = folderTree.reduce((sum, f) => sum + f.size, 0);
+
+    return [...folderTree]  // Create copy to avoid mutation
+      .sort((a, b) => b.size - a.size)
+      .slice(0, TOP_FOLDERS_LIMIT)
       .map((folder) => ({
         name: folder.name,
         size: folder.size,
         size_formatted: folder.size_formatted,
-        percentage: folderTree[0]?.size
-          ? (folder.size / folderTree[0].size) * 100
-          : 0,
-      })) || [];
+        percentage: totalSize > 0 ? (folder.size / totalSize) * 100 : 0,
+      }));
+  }, [folderTree]);
 
   if (summaryLoading) {
     return (
@@ -155,7 +170,7 @@ export default function Statistics() {
                   {pieData.map((_, index) => (
                     <Cell
                       key={`cell-${index}`}
-                      fill={COLORS[index % COLORS.length]}
+                      fill={CHART_COLORS[index % CHART_COLORS.length]}
                     />
                   ))}
                 </Pie>
@@ -262,8 +277,8 @@ export default function Statistics() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {fileTypes?.slice(0, 10).map((type, index) => (
-                <tr key={type.extension || index} className="hover:bg-gray-50">
+              {fileTypes?.slice(0, FILE_TYPES_TABLE_LIMIT).map((type, index) => (
+                <tr key={`type-${type.extension || 'unknown'}-${index}`} className="hover:bg-gray-50">
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                       {type.extension || 'unknown'}

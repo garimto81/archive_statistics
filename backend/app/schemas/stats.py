@@ -82,3 +82,25 @@ class HistoryResponse(BaseModel):
     period: str  # "daily", "weekly", "monthly"
     start_date: datetime
     end_date: datetime
+
+
+class CodecStats(BaseModel):
+    """Codec statistics"""
+
+    codec_name: str
+    codec_type: str  # "video" or "audio"
+    file_count: int
+    total_size: int
+    total_size_formatted: str
+    total_duration: float
+    total_duration_formatted: str
+    percentage: float
+
+
+class CodecSummary(BaseModel):
+    """Codec summary response"""
+
+    video_codecs: List[CodecStats]
+    audio_codecs: List[CodecStats]
+    total_video_files: int
+    total_audio_analyzed: int

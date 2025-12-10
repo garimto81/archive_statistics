@@ -22,6 +22,7 @@ import FolderTreeWithProgress, {
 } from '../components/FolderTreeWithProgress';
 import DataSourceStatus from '../components/DataSourceStatus';
 import ExtensionFilter from '../components/ExtensionFilter';
+import CodecStats from '../components/CodecStats';
 import { statsApi, progressApi } from '../services/api';
 import type { FolderWithProgress, FileWithProgress } from '../types';
 
@@ -162,6 +163,9 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+
+          {/* Codec Stats */}
+          <CodecStats extensions={extensionsArray} />
 
           {/* Data Source Status - Compact */}
           <DataSourceStatus />

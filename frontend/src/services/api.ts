@@ -19,6 +19,7 @@ import type {
   HandAnalysisSummary,
   FolderWithProgress,
   ProgressSummary,
+  CodecSummary,
 } from '../types';
 
 const api = axios.create({
@@ -57,6 +58,16 @@ export const statsApi = {
 
   getAvailableExtensions: async (): Promise<string[]> => {
     const { data } = await api.get('/stats/available-extensions');
+    return data;
+  },
+
+  getCodecs: async (limit = 10, extensions?: string[]): Promise<CodecSummary> => {
+    const params = new URLSearchParams();
+    params.append('limit', limit.toString());
+    if (extensions && extensions.length > 0) {
+      params.append('extensions', extensions.join(','));
+    }
+    const { data } = await api.get(`/stats/codecs?${params}`);
     return data;
   },
 };

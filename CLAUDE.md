@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Version**: 1.12.0 | **Last Updated**: 2025-12-10
+**Version**: 1.13.0 | **Last Updated**: 2025-12-10
 
 ## Project Overview
 
@@ -30,6 +30,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 커밋 해시 참조 | ✅ | `abc1234` |
 | 이슈 번호 연결 | ✅ | `Fixes #3`, `Refs: #5` |
 | 테스트 통과 확인 | ✅ | `pytest`, `npm run lint` |
+| **Docker 재배포** | ✅ | PR 머지 후 반드시 실행 |
+
+### 작업 완료 후 Docker 재배포 (필수) ⚠️
+
+**PR 머지 후 반드시 Docker 재배포를 실행해야 변경사항이 프로덕션에 반영됩니다.**
+
+```powershell
+# 프로젝트 루트에서 실행
+cd D:\AI\claude01\archive-statistics
+
+# Backend 재빌드 및 재배포 (Python 코드 변경 시)
+docker-compose down && docker-compose build --no-cache backend && docker-compose up -d
+
+# 전체 재빌드 (Frontend 포함)
+docker-compose down && docker-compose build --no-cache && docker-compose up -d
+
+# 배포 확인
+docker-compose ps
+curl http://localhost:8002/health
+```
+
+**DB 마이그레이션이 필요한 경우** (새 컬럼 추가 등):
+```powershell
+# 로컬 DB 파일에 직접 마이그레이션 적용
+python -c "
+import sqlite3
+conn = sqlite3.connect('data/archive_stats.db')
+cursor = conn.cursor()
+# ALTER TABLE 실행
+cursor.execute('ALTER TABLE table_name ADD COLUMN new_column TEXT')
+conn.commit()
+conn.close()
+"
+```
 
 ### 버전 업데이트 예시
 

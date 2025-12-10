@@ -46,8 +46,9 @@ class WorkStatus(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationship
+    # Relationships
     archive = relationship("Archive", back_populates="work_statuses")
+    folders = relationship("FolderStats", back_populates="work_status")
 
     def calculate_progress(self):
         """Calculate progress percentage"""

@@ -21,10 +21,16 @@ class FolderStats(Base):
     folder_count = Column(Integer, default=0)
     total_duration = Column(Float, default=0.0)  # seconds
 
+    # Work Status 연결 (명시적 FK - fuzzy matching 대체)
+    work_status_id = Column(Integer, ForeignKey("work_statuses.id"), nullable=True, index=True)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_scanned_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    work_status = relationship("WorkStatus", back_populates="folders")
 
 
 class FileStats(Base):

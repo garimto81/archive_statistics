@@ -317,13 +317,32 @@ class ProgressService:
             "depth": folder.depth,
         }
 
-        # === archive db: Work Status 매칭 (여러 개 가능) ===
-        work_statuses_matched = self._match_work_statuses(folder.name, folder.path, work_statuses)
+        # === archive db: Work Status 매칭 ===
+        # 우선순위: 1. FK 기반 (명시적 연결) > 2. Fuzzy matching (fallback)
+        work_statuses_matched = []
+        matching_method = "none"
+
+        # 1. FK 기반 조회 (folder.work_status_id가 있으면)
+        if hasattr(folder, 'work_status_id') and folder.work_status_id:
+            # work_statuses dict에서 해당 ID 찾기
+            for category, ws in work_statuses.items():
+                if ws.get("id") == folder.work_status_id:
+                    work_statuses_matched = [ws]
+                    matching_method = "fk"
+                    break
+
+        # 2. Fuzzy matching fallback (FK가 없는 경우)
+        if not work_statuses_matched:
+            work_statuses_matched = self._match_work_statuses(folder.name, folder.path, work_statuses)
+            if work_statuses_matched:
+                matching_method = "fuzzy"
+
         folder_dict["work_statuses"] = work_statuses_matched  # 상세 패널용 목록
+        folder_dict["matching_method"] = matching_method  # 디버깅용
 
         # 디버깅: 폴더 매칭 결과 로그
         if current_depth <= 2:
-            logger.info(f"[DEBUG] 폴더 매칭: {folder.name} (depth={current_depth})")
+            logger.info(f"[DEBUG] 폴더 매칭: {folder.name} (depth={current_depth}, method={matching_method})")
             logger.info(f"  - 매칭된 work_status 수: {len(work_statuses_matched)}")
             if work_statuses_matched:
                 for ws in work_statuses_matched[:3]:  # 최대 3개만 표시

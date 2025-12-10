@@ -38,6 +38,25 @@ export interface CodecSummary {
   total_audio_analyzed: number;
 }
 
+// Codecs by Extension Types
+export interface CodecCount {
+  codec_name: string;
+  file_count: number;
+  percentage: number;
+}
+
+export interface ExtensionCodecStats {
+  extension: string;
+  total_files: number;
+  video_codecs: CodecCount[];
+  audio_codecs: CodecCount[];
+}
+
+export interface CodecsByExtensionResponse {
+  extensions: ExtensionCodecStats[];
+  total_extensions: number;
+}
+
 export interface FolderTreeNode {
   id: number;
   name: string;

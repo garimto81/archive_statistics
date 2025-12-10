@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { statsApi } from '../services/api';
-import type { CodecStats as CodecStatsType } from '../types';
+import type { CodecStats as CodecStatsType, CodecCount } from '../types';
 
 interface CodecStatsProps {
   extensions?: string[];
@@ -33,11 +33,39 @@ function CodecBar({ codec, maxCount }: { codec: CodecStatsType; maxCount: number
   );
 }
 
+// Compact codec bar for by-extension view
+function MiniCodecBar({ codec, type }: { codec: CodecCount; type: 'video' | 'audio' }) {
+  const bgColor = type === 'video' ? 'bg-blue-400' : 'bg-green-400';
+
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="font-mono w-12 truncate text-gray-600" title={codec.codec_name}>
+        {codec.codec_name}
+      </span>
+      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full ${bgColor} rounded-full`}
+          style={{ width: `${codec.percentage}%` }}
+        />
+      </div>
+      <span className="text-gray-500 w-10 text-right">{codec.percentage.toFixed(0)}%</span>
+    </div>
+  );
+}
+
 export default function CodecStats({ extensions }: CodecStatsProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['codecs', extensions],
     queryFn: () => statsApi.getCodecs(10, extensions),
     staleTime: 30000,
+  });
+
+  // Fetch codecs by extension (only when no filter is applied)
+  const { data: byExtensionData } = useQuery({
+    queryKey: ['codecs-by-extension'],
+    queryFn: () => statsApi.getCodecsByExtension(8, 4),
+    staleTime: 60000,
+    enabled: !extensions || extensions.length === 0,
   });
 
   if (isLoading) {
@@ -107,6 +135,56 @@ export default function CodecStats({ extensions }: CodecStatsProps) {
           <p className="text-sm text-gray-400">코덱 정보 없음</p>
         )}
       </div>
+
+      {/* Codecs by Extension (only shown when no filter applied) */}
+      {byExtensionData && byExtensionData.extensions.length > 0 && (
+        <div className="mt-6 pt-6 border-t border-gray-100">
+          <h4 className="text-sm font-medium text-gray-700 mb-4">
+            확장자별 코덱 분포
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {byExtensionData.extensions.map((ext) => (
+              <div
+                key={ext.extension}
+                className="p-3 bg-gray-50 rounded-lg border border-gray-100"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-mono text-sm font-semibold text-gray-800">
+                    {ext.extension}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {ext.total_files.toLocaleString()}
+                  </span>
+                </div>
+
+                {/* Video codecs for this extension */}
+                {ext.video_codecs.length > 0 && (
+                  <div className="mb-2">
+                    <span className="text-xs text-blue-500 font-medium">Video</span>
+                    <div className="space-y-1 mt-1">
+                      {ext.video_codecs.slice(0, 3).map((codec) => (
+                        <MiniCodecBar key={codec.codec_name} codec={codec} type="video" />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Audio codecs for this extension */}
+                {ext.audio_codecs.length > 0 && (
+                  <div>
+                    <span className="text-xs text-green-500 font-medium">Audio</span>
+                    <div className="space-y-1 mt-1">
+                      {ext.audio_codecs.slice(0, 2).map((codec) => (
+                        <MiniCodecBar key={codec.codec_name} codec={codec} type="audio" />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

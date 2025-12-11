@@ -299,7 +299,15 @@ class ProgressService:
 
             # 2. 카테고리가 폴더명으로 시작 (예: "PAD S12" → "PAD")
             # 폴더명 뒤에 공백이 와야 함 (WSOPE 폴더가 WSOP로 매칭되는 것 방지)
+            # ⚠️ 핵심 수정 (Issue #24 재발 방지):
+            #   - 단일 단어 상위 폴더(WSOP)가 다단어 하위 카테고리(WSOP LA)와 매칭되면 안됨
+            #   - 이 전략은 "PAD" 폴더 → "PAD S12" 같은 시리즈 매칭용
+            #   - 단, 폴더가 1단어이고 카테고리가 2단어 이상이면 스킵 (상위 폴더 보호)
             if category_lower.startswith(folder_lower + ' '):
+                # 단일 단어 폴더는 다단어 카테고리와 prefix 매칭 금지
+                # 예: "WSOP" (1단어) → "WSOP LA" (2단어) 매칭 금지
+                if len(folder_words) == 1 and len(category_words) >= 2:
+                    continue  # 매칭 스킵
                 matched.append((ws, 0.9, 'prefix'))
                 continue
 
@@ -320,7 +328,12 @@ class ProgressService:
 
             # 4. 폴더명이 카테고리에 독립 단어로 포함 (공백으로 분리된 단어)
             # 예: "2023 WSOP Paradise"에서 "WSOP"는 독립 단어로 매칭됨
-            if folder_lower in category_words:
+            # ⚠️ 핵심 수정 (Issue #24 재발 방지):
+            #   - 단일 단어 폴더(WSOP)가 다단어 카테고리(WSOP LA)와 매칭되면 안됨
+            #   - 폴더 단어 수 <= 카테고리 단어 수일 때만 허용
+            #   - 예: "WSOP" 폴더 → "WSOP LA" 매칭 금지 (1단어 < 2단어)
+            #   - 예: "WSOP" 폴더 → "WSOP" 카테고리는 exact match로 처리됨
+            if folder_lower in category_words and len(folder_words) >= len(category_words):
                 matched.append((ws, 0.8, 'word'))
                 continue
 

@@ -121,12 +121,17 @@ class ProgressService:
         folders = result.scalars().all()
 
         tree = []
+        # ⚠️ 루트 레벨 폴더들 간에도 형제 중복 매칭 방지
+        root_sibling_used_ids: Set[int] = set()
+
         for folder in folders:
-            folder_data = await self._build_folder_progress(
+            folder_data, folder_used_ids = await self._build_folder_progress(
                 db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs,
-                parent_work_status_ids=set()  # 루트 레벨: 빈 Set으로 시작
+                parent_work_status_ids=root_sibling_used_ids.copy()  # 이전 형제에서 사용된 ID 전달
             )
             tree.append(folder_data)
+            # 이 폴더와 하위에서 사용된 ID를 다음 형제에게 전파
+            root_sibling_used_ids.update(folder_used_ids)
 
         return tree
 
@@ -424,12 +429,15 @@ class ProgressService:
         extensions: Optional[List[str]] = None,
         include_codecs: bool = False,
         parent_work_status_ids: Optional[Set[int]] = None,  # 상위 폴더에서 매칭된 work_status ID들
-    ) -> Dict[str, Any]:
+    ) -> Tuple[Dict[str, Any], Set[int]]:
         """폴더 데이터 구축 (archive db + metadata db + codecs 통합)
 
         Args:
             parent_work_status_ids: 상위 폴더에서 이미 매칭된 work_status ID 집합.
                                     Cascading Match 방지: 동일 work_status가 부모-자식에 중복 매칭되지 않도록 함.
+
+        Returns:
+            Tuple[폴더 데이터 dict, 이 폴더와 하위 폴더에서 사용된 work_status_id 집합]
         """
         # 초기화: parent_work_status_ids가 None이면 빈 Set 생성
         if parent_work_status_ids is None:
@@ -606,9 +614,11 @@ class ProgressService:
 
         # === 자식 폴더 (재귀) ===
         children = []
-        # 참고: 자식 합산 변수 제거됨 (Issue #24 - Cascading Match 방지)
-        # 이전: child_total_files, child_total_done 등을 합산하여 부모에 전파
-        # 수정: 각 폴더는 자신의 직접 매칭만 표시 (중복 집계 방지)
+        # ⚠️ 형제+사촌 폴더 간 중복 매칭 방지 (Issue #24 확장)
+        # 형제 폴더를 순회하면서 이미 매칭된 work_status_id를 누적
+        # 먼저 매칭된 폴더가 해당 카테고리를 "점유"
+        # 참고: if 블록 밖에서 초기화해야 함수 끝에서 참조 가능
+        sibling_used_ids: Set[int] = set()
 
         if current_depth < max_depth:
             child_result = await db.execute(
@@ -619,17 +629,26 @@ class ProgressService:
             child_folders = child_result.scalars().all()
 
             for child in child_folders:
-                # ⚠️ Cascading Match 방지: 현재 폴더의 work_status_id를 자식에게 전파
+                # ⚠️ Cascading Match 방지:
+                # 1. 부모에서 매칭된 ID (parent_work_status_ids)
+                # 2. 현재 폴더에서 매칭된 ID (current_work_status_id)
+                # 3. 형제+사촌에서 이미 매칭된 ID (sibling_used_ids) ← 확장!
                 child_parent_ids = parent_work_status_ids.copy()
                 if current_work_status_id:
                     child_parent_ids.add(current_work_status_id)
+                # 형제+사촌에서 사용된 ID도 제외
+                child_parent_ids.update(sibling_used_ids)
 
-                child_data = await self._build_folder_progress(
+                child_data, child_used_ids = await self._build_folder_progress(
                     db, child, work_statuses, hand_data,
                     max_depth, current_depth + 1, include_files, extensions, include_codecs,
-                    parent_work_status_ids=child_parent_ids  # 상위 매칭 ID 전파
+                    parent_work_status_ids=child_parent_ids  # 상위+형제 매칭 ID 전파
                 )
                 children.append(child_data)
+
+                # ⚠️ 핵심 수정: 이 자식과 그 하위 폴더에서 사용된 모든 ID를 형제에게 전파
+                # 이렇게 하면 사촌 폴더(다른 부모의 자식)도 중복 사용 방지됨
+                sibling_used_ids.update(child_used_ids)
 
                 # 참고: work_summary 자식 합산 제거됨 (Issue #24)
                 # 각 폴더는 자신의 직접 매칭만 표시 (Cascading Match 방지)
@@ -745,7 +764,15 @@ class ProgressService:
         else:
             folder_dict["files"] = None
 
-        return folder_dict
+        # ⚠️ 이 폴더와 모든 하위 폴더에서 사용된 work_status_id 수집
+        # 호출자에게 반환하여 형제/사촌 폴더에서 중복 사용 방지
+        all_used_ids: Set[int] = set()
+        if current_work_status_id:
+            all_used_ids.add(current_work_status_id)
+        # sibling_used_ids는 자식들과 그 하위 폴더에서 사용한 모든 ID
+        all_used_ids.update(sibling_used_ids)
+
+        return folder_dict, all_used_ids
 
     # === END BLOCK: progress.aggregator ===
 

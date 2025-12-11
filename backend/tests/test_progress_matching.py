@@ -174,5 +174,92 @@ class TestProgressMatching:
             assert len(result) == 1
 
 
+    # === 새로 추가된 테스트: Cascading Match 방지 (Issue #24) ===
+
+    def test_cascading_match_excludes_parent_work_status(self):
+        """상위 폴더에서 매칭된 work_status는 하위에서 제외
+
+        시나리오:
+        - WSOP-EUROPE → "WSOP Europe" (id=4) 매칭
+        - 2025 WSOP-Europe (하위 폴더)는 id=4 제외하고 매칭해야 함
+
+        parent_work_status_ids={4} 전달 시, "WSOP Europe"이 제외되어야 함
+        """
+        # 상위에서 "WSOP Europe" (id=4)가 이미 매칭된 상황 시뮬레이션
+        parent_ids = {4}  # WSOP Europe의 ID
+
+        # 상위에서 사용된 work_status 제외
+        available_work_statuses = {
+            cat: ws for cat, ws in self.work_statuses.items()
+            if ws.get("id") not in parent_ids
+        }
+
+        # "2025 WSOP-Europe"는 더 이상 "WSOP Europe"과 매칭되면 안 됨
+        result = self.service._match_work_statuses(
+            "2025 WSOP-Europe",
+            "/mnt/nas/WSOP/WSOP-Europe/2025 WSOP-Europe",
+            available_work_statuses  # 필터링된 work_statuses 사용
+        )
+
+        # 결과가 있다면, "WSOP Europe"이 아닌 다른 매칭이어야 함
+        if result:
+            assert result[0]["category"] != "WSOP Europe", \
+                f"Expected non-WSOP Europe match, got {result[0]['category']}"
+        # 결과가 없으면 (매칭할 게 없음) → 정상 동작
+
+    def test_cascading_match_allows_different_work_status(self):
+        """다른 work_status는 하위 폴더에서 매칭 가능
+
+        시나리오:
+        - WSOP-EUROPE → "WSOP Europe" (id=4) 매칭
+        - 2025 WSOP (하위 폴더)는 "2025 WSOP" (id=5)에 매칭 가능해야 함
+        """
+        # 상위에서 "WSOP Europe" (id=4)만 사용됨
+        parent_ids = {4}
+
+        available_work_statuses = {
+            cat: ws for cat, ws in self.work_statuses.items()
+            if ws.get("id") not in parent_ids
+        }
+
+        # "2025 WSOP-LAS VEGAS"는 "2025 WSOP" (id=5)와 매칭 가능
+        result = self.service._match_work_statuses(
+            "2025 WSOP-LAS VEGAS",
+            "/mnt/nas/WSOP/WSOP-Europe/2025 WSOP-LAS VEGAS",
+            available_work_statuses
+        )
+
+        assert len(result) >= 1
+        # "2025 WSOP"가 매칭되어야 함 (id=5는 parent_ids에 없음)
+        categories = [r["category"] for r in result]
+        assert "2025 WSOP" in categories
+
+    def test_cascading_match_empty_parent_ids(self):
+        """parent_work_status_ids가 비어있으면 모든 work_status 사용 가능
+
+        루트 폴더나 첫 번째 매칭 폴더의 경우
+        """
+        # 빈 parent_ids → 전체 work_statuses 사용
+        parent_ids = set()
+
+        available_work_statuses = {
+            cat: ws for cat, ws in self.work_statuses.items()
+            if ws.get("id") not in parent_ids
+        }
+
+        # 모든 work_status가 available
+        assert len(available_work_statuses) == len(self.work_statuses)
+
+        # "WSOP Europe" 폴더는 정상 매칭되어야 함
+        result = self.service._match_work_statuses(
+            "WSOP-Europe",
+            "/mnt/nas/WSOP/WSOP-Europe",
+            available_work_statuses
+        )
+
+        assert len(result) == 1
+        assert result[0]["category"] == "WSOP Europe"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

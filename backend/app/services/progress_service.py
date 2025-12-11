@@ -123,7 +123,8 @@ class ProgressService:
         tree = []
         for folder in folders:
             folder_data = await self._build_folder_progress(
-                db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs
+                db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs,
+                parent_work_status_ids=set()  # 루트 레벨: 빈 Set으로 시작
             )
             tree.append(folder_data)
 
@@ -183,6 +184,60 @@ class ProgressService:
         return hand_data
 
     # === END BLOCK: progress.data_loader ===
+
+    # === BLOCK: progress.ancestor_matcher ===
+    # Description: 상위 폴더들의 매칭된 work_status_ids 계산 (Cascading 방지용)
+    # Dependencies: _match_work_statuses
+    # AI Context: /progress/folder API에서 Cascading 방지 시 사용
+
+    async def _get_ancestor_work_status_ids(
+        self,
+        db: AsyncSession,
+        folder_path: str,
+        work_statuses: Dict[str, Dict]
+    ) -> Set[int]:
+        """상위 폴더들에서 매칭된 work_status_ids를 계산
+
+        Args:
+            folder_path: 현재 폴더 경로
+            work_statuses: 전체 work_status 데이터
+
+        Returns:
+            상위 폴더들에서 매칭된 work_status_id 집합
+        """
+        ancestor_ids: Set[int] = set()
+
+        # 경로를 분해하여 상위 폴더들 추출
+        # 예: /mnt/nas/WSOP/Bracelet/Europe → [/mnt/nas, /mnt/nas/WSOP, /mnt/nas/WSOP/Bracelet]
+        path_parts = folder_path.split('/')
+        current_path = ""
+
+        for i, part in enumerate(path_parts[:-1]):  # 마지막(현재 폴더) 제외
+            if not part:
+                continue
+            current_path = current_path + "/" + part if current_path else "/" + part
+
+            # 상위 폴더 조회
+            ancestor_result = await db.execute(
+                select(FolderStats).where(FolderStats.path == current_path)
+            )
+            ancestor = ancestor_result.scalar_one_or_none()
+
+            if ancestor:
+                # 상위 폴더에서 매칭되는 work_status 찾기
+                # ancestor_ids에 있는 것은 제외 (더 상위에서 이미 매칭됨)
+                available_ws = {
+                    cat: ws for cat, ws in work_statuses.items()
+                    if ws.get("id") not in ancestor_ids
+                }
+                matched = self._match_work_statuses(ancestor.name, ancestor.path, available_ws)
+                if matched:
+                    # 최상위 매칭만 사용 (Single Match Policy)
+                    ancestor_ids.add(matched[0].get("id"))
+
+        return ancestor_ids
+
+    # === END BLOCK: progress.ancestor_matcher ===
 
     # === BLOCK: progress.matcher ===
     # Description: 폴더명-카테고리 매칭 로직 (핵심!)
@@ -355,8 +410,17 @@ class ProgressService:
         include_files: bool,
         extensions: Optional[List[str]] = None,
         include_codecs: bool = False,
+        parent_work_status_ids: Optional[Set[int]] = None,  # 상위 폴더에서 매칭된 work_status ID들
     ) -> Dict[str, Any]:
-        """폴더 데이터 구축 (archive db + metadata db + codecs 통합)"""
+        """폴더 데이터 구축 (archive db + metadata db + codecs 통합)
+
+        Args:
+            parent_work_status_ids: 상위 폴더에서 이미 매칭된 work_status ID 집합.
+                                    Cascading Match 방지: 동일 work_status가 부모-자식에 중복 매칭되지 않도록 함.
+        """
+        # 초기화: parent_work_status_ids가 None이면 빈 Set 생성
+        if parent_work_status_ids is None:
+            parent_work_status_ids = set()
 
         # 기본 폴더 정보
         folder_dict = {
@@ -374,23 +438,39 @@ class ProgressService:
 
         # === archive db: Work Status 매칭 ===
         # 우선순위: 1. FK 기반 (명시적 연결) > 2. Fuzzy matching (fallback)
+        # ⚠️ Cascading Match 방지: 상위에서 이미 매칭된 work_status는 제외
         work_statuses_matched = []
         matching_method = "none"
+        current_work_status_id = None  # 현재 폴더에서 매칭된 work_status ID (자식에게 전파용)
 
         # 1. FK 기반 조회 (folder.work_status_id가 있으면)
         if hasattr(folder, 'work_status_id') and folder.work_status_id:
-            # work_statuses dict에서 해당 ID 찾기
+            # FK가 있으면 무조건 사용 (parent_work_status_ids에 있어도 FK 우선)
             for category, ws in work_statuses.items():
                 if ws.get("id") == folder.work_status_id:
                     work_statuses_matched = [ws]
                     matching_method = "fk"
+                    current_work_status_id = folder.work_status_id
                     break
 
         # 2. Fuzzy matching fallback (FK가 없는 경우)
+        # ⚠️ 핵심: 상위에서 이미 매칭된 work_status_id는 제외
         if not work_statuses_matched:
-            work_statuses_matched = self._match_work_statuses(folder.name, folder.path, work_statuses)
-            if work_statuses_matched:
-                matching_method = "fuzzy"
+            # 상위에서 사용되지 않은 work_statuses만 필터링
+            available_work_statuses = {
+                cat: ws for cat, ws in work_statuses.items()
+                if ws.get("id") not in parent_work_status_ids
+            }
+
+            if available_work_statuses:
+                work_statuses_matched = self._match_work_statuses(folder.name, folder.path, available_work_statuses)
+                if work_statuses_matched:
+                    matching_method = "fuzzy"
+                    current_work_status_id = work_statuses_matched[0].get("id")
+            else:
+                # 모든 work_status가 상위에서 사용됨 → 매칭 스킵
+                if current_depth <= 2:
+                    logger.info(f"[DEBUG] {folder.name}: 상위 폴더에서 모든 work_status 사용됨 → fuzzy matching 스킵")
 
         folder_dict["work_statuses"] = work_statuses_matched  # 상세 패널용 목록
         folder_dict["matching_method"] = matching_method  # 디버깅용
@@ -528,9 +608,15 @@ class ProgressService:
             child_folders = child_result.scalars().all()
 
             for child in child_folders:
+                # ⚠️ Cascading Match 방지: 현재 폴더의 work_status_id를 자식에게 전파
+                child_parent_ids = parent_work_status_ids.copy()
+                if current_work_status_id:
+                    child_parent_ids.add(current_work_status_id)
+
                 child_data = await self._build_folder_progress(
                     db, child, work_statuses, hand_data,
-                    max_depth, current_depth + 1, include_files, extensions, include_codecs
+                    max_depth, current_depth + 1, include_files, extensions, include_codecs,
+                    parent_work_status_ids=child_parent_ids  # 상위 매칭 ID 전파
                 )
                 children.append(child_data)
 
@@ -541,6 +627,10 @@ class ProgressService:
                     child_total_done += child_ws.get("total_done", 0)
                     child_task_count += child_ws.get("task_count", 0)
                     child_sheets_total += child_ws.get("sheets_total_videos", 0)
+                else:
+                    # ⚠️ work_summary가 없는 자식도 file_count는 합산해야 함
+                    # (GGMillions, HCL 등 매칭되지 않은 폴더들)
+                    child_total_files += child_data.get("file_count", 0)
 
                 # 자식 폴더의 hand_analysis 합산 (files_matched, hand_count만 합산)
                 # total_files는 folder.file_count에 이미 하위 폴더 포함되어 있으므로 합산하지 않음
@@ -776,6 +866,9 @@ class ProgressService:
         work_statuses = await self._load_work_statuses(db)
         hand_data = await self._load_hand_analysis_data(db)
 
+        # ⚠️ Cascading Match 방지: 상위 폴더에서 매칭된 work_status_ids 계산
+        ancestor_work_status_ids = await self._get_ancestor_work_status_ids(db, folder_path, work_statuses)
+
         folder_dict = {
             "id": folder.id,
             "name": folder.name,
@@ -790,7 +883,12 @@ class ProgressService:
         }
 
         # Work Status (여러 개 가능)
-        work_statuses_matched = self._match_work_statuses(folder.name, folder.path, work_statuses)
+        # ⚠️ Cascading 방지: 상위에서 매칭된 work_status는 제외
+        available_work_statuses = {
+            cat: ws for cat, ws in work_statuses.items()
+            if ws.get("id") not in ancestor_work_status_ids
+        }
+        work_statuses_matched = self._match_work_statuses(folder.name, folder.path, available_work_statuses)
         folder_dict["work_statuses"] = work_statuses_matched
         folder_dict["work_status"] = work_statuses_matched[0] if work_statuses_matched else None
 
@@ -859,10 +957,25 @@ class ProgressService:
         )
         child_folders = child_result.scalars().all()
 
+        # ⚠️ Cascading Match 방지: 자식 폴더 매칭 시 조상 + 현재 폴더의 매칭된 ID 제외
+        parent_work_status_ids = ancestor_work_status_ids.copy()
+        if work_statuses_matched:
+            # 현재 폴더에서 매칭된 work_status의 id들을 추가
+            for matched_ws in work_statuses_matched:
+                if matched_ws.get("id"):
+                    parent_work_status_ids.add(matched_ws["id"])
+
+        # 자식 폴더용 available_work_statuses (조상+현재 제외)
+        child_available_work_statuses = {
+            cat: ws for cat, ws in work_statuses.items()
+            if ws.get("id") not in parent_work_status_ids
+        }
+
         children = []
         for child in child_folders:
             # 자식 폴더 기본 정보 (재귀 호출 없이 1단계만)
-            child_work_statuses = self._match_work_statuses(child.name, child.path, work_statuses)
+            # ⚠️ Cascading 방지: 필터링된 work_statuses 사용
+            child_work_statuses = self._match_work_statuses(child.name, child.path, child_available_work_statuses)
 
             child_summary = None
             if child_work_statuses:

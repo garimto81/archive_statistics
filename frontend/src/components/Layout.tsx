@@ -108,7 +108,7 @@ export default function Layout({ children }: LayoutProps) {
                 Archive Statistics
               </h1>
               <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
-                v1.15.0 | 확장자별 코덱 분포
+                v1.21.0 | Issue #26 Fix
               </span>
             </div>
 

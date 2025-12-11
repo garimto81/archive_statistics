@@ -593,11 +593,9 @@ class ProgressService:
 
         # === 자식 폴더 (재귀) ===
         children = []
-        # work_summary 합산용 변수 (file_count 기준)
-        child_total_files = 0
-        child_total_done = 0
-        child_task_count = 0
-        child_sheets_total = 0  # 구글 시트 원본 값 합산
+        # 참고: 자식 합산 변수 제거됨 (Issue #24 - Cascading Match 방지)
+        # 이전: child_total_files, child_total_done 등을 합산하여 부모에 전파
+        # 수정: 각 폴더는 자신의 직접 매칭만 표시 (중복 집계 방지)
 
         if current_depth < max_depth:
             child_result = await db.execute(
@@ -620,17 +618,8 @@ class ProgressService:
                 )
                 children.append(child_data)
 
-                # 자식 폴더의 work_summary 합산 (file_count 기준)
-                if child_data.get("work_summary"):
-                    child_ws = child_data["work_summary"]
-                    child_total_files += child_ws.get("total_files", 0)
-                    child_total_done += child_ws.get("total_done", 0)
-                    child_task_count += child_ws.get("task_count", 0)
-                    child_sheets_total += child_ws.get("sheets_total_videos", 0)
-                else:
-                    # ⚠️ work_summary가 없는 자식도 file_count는 합산해야 함
-                    # (GGMillions, HCL 등 매칭되지 않은 폴더들)
-                    child_total_files += child_data.get("file_count", 0)
+                # 참고: work_summary 자식 합산 제거됨 (Issue #24)
+                # 각 폴더는 자신의 직접 매칭만 표시 (Cascading Match 방지)
 
                 # 자식 폴더의 hand_analysis 합산 (files_matched, hand_count만 합산)
                 # total_files는 folder.file_count에 이미 하위 폴더 포함되어 있으므로 합산하지 않음
@@ -656,25 +645,32 @@ class ProgressService:
 
         folder_dict["children"] = children
 
-        # work_summary 합산 로직 (중복 방지)
-        # 핵심: 직접 매칭이 있는 폴더는 자식 합산을 하지 않음 (이중 카운트 방지)
-        # 직접 매칭이 없는 폴더만 자식 합산으로 work_summary 생성
+        # work_summary 로직 (Cascading Match Prevention)
+        # ⚠️ 핵심 수정 (Issue #24): 직접 매칭이 있는 폴더만 work_summary 표시
+        # 자식 합산 로직 제거 - 중복 집계 원인 (WSOP Bracelet Event 버그)
+        #
+        # 이전 동작 (버그):
+        #   - 직접 매칭 없는 부모가 자식의 total_done을 합산하여 중복 표시
+        #   - 예: WSOP Bracelet Event (45/744) = WSOP-EUROPE(27) + LAS VEGAS(9) + PARADISE(9)
+        #
+        # 수정 후:
+        #   - 직접 매칭이 있는 폴더만 work_summary 표시
+        #   - 직접 매칭 없는 폴더는 work_summary = None (진행률 바 없음)
+        #   - 자식 폴더들은 각자 자신의 work_summary만 표시
         if folder_dict["work_summary"]:
-            # 직접 매칭이 있는 경우: 자식 합산하지 않음 (work_status는 해당 폴더에만 적용)
-            # total_files만 NAS 실제 파일 수로 설정 (folder.file_count 사용)
+            # 직접 매칭이 있는 경우만 work_summary 유지
+            # total_files는 NAS 실제 파일 수 (folder.file_count)
             ws = folder_dict["work_summary"]
-            ws["total_files"] = folder.file_count  # NAS 전체 파일 수 (하위 포함)
+            ws["total_files"] = folder.file_count
 
             # combined_progress 재계산 (NAS file_count 기준)
             if ws["total_files"] > 0:
-                # total_done은 직접 매칭된 work_status의 excel_done 합계 (자식 미포함)
                 combined_progress = min(ws["total_done"] / ws["total_files"] * 100, 100.0)
-                # 90% 이상은 100%로 처리
                 if combined_progress >= 90:
                     combined_progress = 100.0
                 ws["combined_progress"] = round(combined_progress, 1)
 
-            # actual_progress 계산 (시트 기준 - 더 정확한 진행률)
+            # actual_progress 계산 (시트 기준 - 실제 진행률)
             if ws["sheets_total_videos"] > 0:
                 actual_progress = ws["total_done"] / ws["sheets_total_videos"] * 100
                 if actual_progress >= 90:
@@ -686,37 +682,7 @@ class ProgressService:
             # 데이터 불일치 감지
             ws["data_source_mismatch"] = abs(ws["total_files"] - ws["sheets_total_videos"]) > max(ws["total_files"], ws["sheets_total_videos"], 1) * 0.1
             ws["mismatch_count"] = ws["sheets_total_videos"] - ws["total_files"]
-        elif child_total_files > 0:
-            # 현재 폴더에 매칭이 없지만 자식에 있는 경우 → 자식 합산으로 work_summary 생성
-            # 디버깅: 자식 합산 로그
-            if current_depth <= 2:
-                logger.info(f"[DEBUG] ✅ {folder.name}: 자식 합산으로 work_summary 생성!")
-                logger.info(f"  - child_total_files: {child_total_files}, child_total_done: {child_total_done}")
-
-            combined_progress = (child_total_done / child_total_files * 100) if child_total_files > 0 else 0
-            # 90% 이상은 100%로 처리
-            if combined_progress >= 90:
-                combined_progress = 100.0
-
-            # actual_progress 계산
-            actual_progress = (child_total_done / child_sheets_total * 100) if child_sheets_total > 0 else 0
-            if actual_progress >= 90:
-                actual_progress = 100.0
-
-            # 데이터 불일치 감지
-            data_mismatch = abs(child_total_files - child_sheets_total) > max(child_total_files, child_sheets_total) * 0.1
-
-            folder_dict["work_summary"] = {
-                "task_count": child_task_count,
-                "total_files": child_total_files,
-                "total_done": child_total_done,
-                "combined_progress": round(combined_progress, 1),
-                "sheets_total_videos": child_sheets_total,
-                "sheets_excel_done": child_total_done,
-                "actual_progress": round(actual_progress, 1),
-                "data_source_mismatch": data_mismatch,
-                "mismatch_count": child_sheets_total - child_total_files,
-            }
+        # else: 직접 매칭 없음 → work_summary = None 유지 (자식 합산 제거)
 
         # 최종 통계 계산
         ha = folder_dict["hand_analysis"]

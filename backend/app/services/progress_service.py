@@ -411,34 +411,45 @@ class ProgressService:
             # 구글 시트 원본 값 합산 (검증용)
             sheets_total = sum(ws.get("total_videos", 0) for ws in work_statuses_matched)
 
-            # file_count 기준 진행률 계산 (NAS 실제 파일 수)
-            combined_progress = (total_done / folder.file_count * 100) if folder.file_count > 0 else 0
+            # ⚠️ 검증: total_done > total_files 이면 잘못된 매칭 (무효화)
+            # 예: 파일 1개 폴더가 done=27인 작업에 매칭된 경우
+            if total_done > folder.file_count:
+                logger.warning(
+                    f"[MISMATCH] {folder.name}: total_done({total_done}) > file_count({folder.file_count}) - 매칭 무효화"
+                )
+                work_statuses_matched = []
+                folder_dict["work_statuses"] = []
+                folder_dict["matching_method"] = "invalidated"
+                folder_dict["work_summary"] = None  # 무효화된 매칭은 work_summary 없음
+            else:
+                # file_count 기준 진행률 계산 (NAS 실제 파일 수)
+                combined_progress = (total_done / folder.file_count * 100) if folder.file_count > 0 else 0
 
-            # 90% 이상은 100%로 처리
-            if combined_progress >= 90:
-                combined_progress = 100.0
+                # 90% 이상은 100%로 처리
+                if combined_progress >= 90:
+                    combined_progress = 100.0
 
-            # 구글 시트 기준 진행률 계산 (실제 작업 진행률)
-            actual_progress = (total_done / sheets_total * 100) if sheets_total > 0 else 0
-            if actual_progress >= 90:
-                actual_progress = 100.0
+                # 구글 시트 기준 진행률 계산 (실제 작업 진행률)
+                actual_progress = (total_done / sheets_total * 100) if sheets_total > 0 else 0
+                if actual_progress >= 90:
+                    actual_progress = 100.0
 
-            # 데이터 출처 불일치 감지
-            data_mismatch = abs(folder.file_count - sheets_total) > max(folder.file_count, sheets_total) * 0.1  # 10% 이상 차이
+                # 데이터 출처 불일치 감지
+                data_mismatch = abs(folder.file_count - sheets_total) > max(folder.file_count, sheets_total) * 0.1  # 10% 이상 차이
 
-            folder_dict["work_summary"] = {
-                "task_count": len(work_statuses_matched),
-                "total_files": folder.file_count,  # NAS 스캔 결과
-                "total_done": total_done,  # 구글 시트 excel_done 합계
-                "combined_progress": round(combined_progress, 1),  # NAS 기준 (참고용)
-                # 구글 시트 원본 값
-                "sheets_total_videos": sheets_total,  # 구글 시트 total_videos 합계
-                "sheets_excel_done": total_done,  # 동일 값이지만 명시적으로 표시
-                "actual_progress": round(actual_progress, 1),  # 시트 기준 (실제 진행률)
-                # 데이터 불일치 정보
-                "data_source_mismatch": data_mismatch,
-                "mismatch_count": sheets_total - folder.file_count,  # 양수: 시트가 더 많음, 음수: NAS가 더 많음
-            }
+                folder_dict["work_summary"] = {
+                    "task_count": len(work_statuses_matched),
+                    "total_files": folder.file_count,  # NAS 스캔 결과
+                    "total_done": total_done,  # 구글 시트 excel_done 합계
+                    "combined_progress": round(combined_progress, 1),  # NAS 기준 (참고용)
+                    # 구글 시트 원본 값
+                    "sheets_total_videos": sheets_total,  # 구글 시트 total_videos 합계
+                    "sheets_excel_done": total_done,  # 동일 값이지만 명시적으로 표시
+                    "actual_progress": round(actual_progress, 1),  # 시트 기준 (실제 진행률)
+                    # 데이터 불일치 정보
+                    "data_source_mismatch": data_mismatch,
+                    "mismatch_count": sheets_total - folder.file_count,  # 양수: 시트가 더 많음, 음수: NAS가 더 많음
+                }
         else:
             folder_dict["work_summary"] = None
             # 디버깅: 매칭 실패 시 로그

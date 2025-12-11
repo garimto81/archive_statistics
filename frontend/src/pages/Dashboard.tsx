@@ -114,6 +114,7 @@ export default function Dashboard() {
           <FolderTreeWithProgress
             initialDepth={3}
             showFiles={true}
+            enableLazyLoading={true}
             selectedExtensions={extensionsArray}
             onFolderSelect={handleFolderSelect}
             onFileSelect={handleFileSelect}

@@ -108,7 +108,7 @@ export default function Layout({ children }: LayoutProps) {
                 Archive Statistics
               </h1>
               <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
-                v1.22.0 | Cascading Match Fix
+                v1.23.0 | Child Aggregation Fix
               </span>
             </div>
 

@@ -118,6 +118,61 @@ class TestProgressMatching:
         assert self.service._normalize_folder_name("WSOP-Europe") == "wsop europe"
         assert self.service._normalize_folder_name("WSOP  Europe") == "wsop europe"
 
+    # === 새로 추가된 테스트: 단일 매칭 정책 (Issue #10 관련) ===
+
+    def test_single_match_only(self):
+        """핵심 수정: 여러 매칭 후보 중 최고 점수 하나만 반환
+
+        이전 동작: "WSOP Europe"과 "2025 WSOP" 둘 다 반환 → excel_done 중복 합산
+        현재 동작: 최고 점수 매칭 1개만 반환
+        """
+        # "2025 WSOP-Europe"은 두 카테고리에 매칭 가능:
+        # - "WSOP Europe" (word match)
+        # - "2025 WSOP" (subset match)
+        result = self.service._match_work_statuses(
+            "2025 WSOP-Europe", "/mnt/nas/WSOP/2025 WSOP-Europe", self.work_statuses
+        )
+        # 단일 매칭만 반환되어야 함
+        assert len(result) == 1, f"Expected 1 match, got {len(result)}: {[r['category'] for r in result]}"
+
+    def test_single_match_europe_main_event(self):
+        """실제 문제 케이스: 2025 WSOP-EUROPE MAIN EVENT
+
+        이전: "WSOP Europe" + "2025 WSOP" 둘 다 매칭 → done=33 (27+6)
+        현재: 최고 점수 매칭 1개만 → done=27 (WSOP Europe)
+        """
+        result = self.service._match_work_statuses(
+            "2025 WSOP-EUROPE MAIN EVENT",
+            "/mnt/nas/WSOP/2025 WSOP-EUROPE MAIN EVENT",
+            self.work_statuses
+        )
+        assert len(result) == 1
+        # 가장 정확한 매칭은 "WSOP Europe" (정규화 후 일치)
+        assert result[0]["category"] == "WSOP Europe"
+
+    def test_no_match_for_small_subfolder(self):
+        """작은 하위 폴더는 상위 작업과 매칭되지 않아야 함
+
+        주의: 이 테스트는 _match_work_statuses 자체가 아닌
+        _build_folder_progress의 검증 로직을 확인하는 것
+        (total_done > total_files → 무효화)
+
+        여기서는 매칭 자체는 발생할 수 있지만,
+        실제 진행률 계산에서 무효화됨
+        """
+        # MINI MAIN EVENT는 WSOP Europe과 매칭될 수 있음
+        result = self.service._match_work_statuses(
+            "2025 WSOP-EUROPE #5 MINI MAIN EVENT",
+            "/mnt/nas/WSOP/2025 WSOP-Europe/MINI",
+            self.work_statuses
+        )
+        # 매칭은 발생할 수 있음 (word match)
+        # 하지만 file_count < excel_done인 경우 _build_folder_progress에서 무효화됨
+        # 이 테스트는 매칭 로직 자체만 테스트
+        if len(result) > 0:
+            # 매칭되더라도 1개만 반환되어야 함
+            assert len(result) == 1
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

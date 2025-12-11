@@ -108,7 +108,7 @@ export default function Layout({ children }: LayoutProps) {
                 Archive Statistics
               </h1>
               <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
-                v1.25.0 | Global Single Match Policy
+                v1.26.0 | Lazy Load Cascading Fix
               </span>
             </div>
 

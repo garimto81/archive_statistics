@@ -120,14 +120,25 @@ class ProgressService:
         result = await db.execute(query.order_by(FolderStats.total_size.desc()))
         folders = result.scalars().all()
 
+        # ⚠️ Lazy Loading 시 Cascading Match 방지 (Issue #24 확장)
+        # path가 있으면 → 상위 폴더들에서 이미 매칭된 work_status_ids 계산
+        ancestor_work_status_ids: Set[int] = set()
+        if path:
+            ancestor_work_status_ids = await self._get_ancestor_work_status_ids(
+                db, path, work_statuses
+            )
+            if ancestor_work_status_ids:
+                logger.info(f"[Lazy Load] path={path}, ancestor_ids={ancestor_work_status_ids}")
+
         tree = []
         # ⚠️ 루트 레벨 폴더들 간에도 형제 중복 매칭 방지
-        root_sibling_used_ids: Set[int] = set()
+        # ancestor_ids와 sibling_ids 모두 포함
+        root_sibling_used_ids: Set[int] = ancestor_work_status_ids.copy()
 
         for folder in folders:
             folder_data, folder_used_ids = await self._build_folder_progress(
                 db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs,
-                parent_work_status_ids=root_sibling_used_ids.copy()  # 이전 형제에서 사용된 ID 전달
+                parent_work_status_ids=root_sibling_used_ids.copy()  # 조상+이전형제 ID 전달
             )
             tree.append(folder_data)
             # 이 폴더와 하위에서 사용된 ID를 다음 형제에게 전파
@@ -212,12 +223,13 @@ class ProgressService:
         """
         ancestor_ids: Set[int] = set()
 
-        # 경로를 분해하여 상위 폴더들 추출
-        # 예: /mnt/nas/WSOP/Bracelet/Europe → [/mnt/nas, /mnt/nas/WSOP, /mnt/nas/WSOP/Bracelet]
+        # 경로를 분해하여 상위 폴더들 추출 (현재 폴더 포함!)
+        # 예: /mnt/nas/WSOP/Bracelet/Europe → [/mnt/nas, /mnt/nas/WSOP, /mnt/nas/WSOP/Bracelet, /mnt/nas/WSOP/Bracelet/Europe]
+        # ⚠️ Lazy Loading 시 path는 부모 폴더이므로, 이 폴더 자체의 매칭도 포함해야 함
         path_parts = folder_path.split('/')
         current_path = ""
 
-        for i, part in enumerate(path_parts[:-1]):  # 마지막(현재 폴더) 제외
+        for i, part in enumerate(path_parts):  # 모든 경로 포함 (현재 폴더까지)
             if not part:
                 continue
             current_path = current_path + "/" + part if current_path else "/" + part

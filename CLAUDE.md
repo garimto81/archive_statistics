@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Version**: 1.25.0 | **Last Updated**: 2025-12-11
+**Version**: 1.26.0 | **Last Updated**: 2025-12-11
 
 ## Project Overview
 

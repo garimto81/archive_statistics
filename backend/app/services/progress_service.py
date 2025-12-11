@@ -123,7 +123,8 @@ class ProgressService:
         tree = []
         for folder in folders:
             folder_data = await self._build_folder_progress(
-                db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs
+                db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs,
+                parent_work_status_ids=set()  # 루트 레벨: 빈 Set으로 시작
             )
             tree.append(folder_data)
 
@@ -355,8 +356,17 @@ class ProgressService:
         include_files: bool,
         extensions: Optional[List[str]] = None,
         include_codecs: bool = False,
+        parent_work_status_ids: Optional[Set[int]] = None,  # 상위 폴더에서 매칭된 work_status ID들
     ) -> Dict[str, Any]:
-        """폴더 데이터 구축 (archive db + metadata db + codecs 통합)"""
+        """폴더 데이터 구축 (archive db + metadata db + codecs 통합)
+
+        Args:
+            parent_work_status_ids: 상위 폴더에서 이미 매칭된 work_status ID 집합.
+                                    Cascading Match 방지: 동일 work_status가 부모-자식에 중복 매칭되지 않도록 함.
+        """
+        # 초기화: parent_work_status_ids가 None이면 빈 Set 생성
+        if parent_work_status_ids is None:
+            parent_work_status_ids = set()
 
         # 기본 폴더 정보
         folder_dict = {
@@ -374,23 +384,39 @@ class ProgressService:
 
         # === archive db: Work Status 매칭 ===
         # 우선순위: 1. FK 기반 (명시적 연결) > 2. Fuzzy matching (fallback)
+        # ⚠️ Cascading Match 방지: 상위에서 이미 매칭된 work_status는 제외
         work_statuses_matched = []
         matching_method = "none"
+        current_work_status_id = None  # 현재 폴더에서 매칭된 work_status ID (자식에게 전파용)
 
         # 1. FK 기반 조회 (folder.work_status_id가 있으면)
         if hasattr(folder, 'work_status_id') and folder.work_status_id:
-            # work_statuses dict에서 해당 ID 찾기
+            # FK가 있으면 무조건 사용 (parent_work_status_ids에 있어도 FK 우선)
             for category, ws in work_statuses.items():
                 if ws.get("id") == folder.work_status_id:
                     work_statuses_matched = [ws]
                     matching_method = "fk"
+                    current_work_status_id = folder.work_status_id
                     break
 
         # 2. Fuzzy matching fallback (FK가 없는 경우)
+        # ⚠️ 핵심: 상위에서 이미 매칭된 work_status_id는 제외
         if not work_statuses_matched:
-            work_statuses_matched = self._match_work_statuses(folder.name, folder.path, work_statuses)
-            if work_statuses_matched:
-                matching_method = "fuzzy"
+            # 상위에서 사용되지 않은 work_statuses만 필터링
+            available_work_statuses = {
+                cat: ws for cat, ws in work_statuses.items()
+                if ws.get("id") not in parent_work_status_ids
+            }
+
+            if available_work_statuses:
+                work_statuses_matched = self._match_work_statuses(folder.name, folder.path, available_work_statuses)
+                if work_statuses_matched:
+                    matching_method = "fuzzy"
+                    current_work_status_id = work_statuses_matched[0].get("id")
+            else:
+                # 모든 work_status가 상위에서 사용됨 → 매칭 스킵
+                if current_depth <= 2:
+                    logger.info(f"[DEBUG] {folder.name}: 상위 폴더에서 모든 work_status 사용됨 → fuzzy matching 스킵")
 
         folder_dict["work_statuses"] = work_statuses_matched  # 상세 패널용 목록
         folder_dict["matching_method"] = matching_method  # 디버깅용
@@ -528,9 +554,15 @@ class ProgressService:
             child_folders = child_result.scalars().all()
 
             for child in child_folders:
+                # ⚠️ Cascading Match 방지: 현재 폴더의 work_status_id를 자식에게 전파
+                child_parent_ids = parent_work_status_ids.copy()
+                if current_work_status_id:
+                    child_parent_ids.add(current_work_status_id)
+
                 child_data = await self._build_folder_progress(
                     db, child, work_statuses, hand_data,
-                    max_depth, current_depth + 1, include_files, extensions, include_codecs
+                    max_depth, current_depth + 1, include_files, extensions, include_codecs,
+                    parent_work_status_ids=child_parent_ids  # 상위 매칭 ID 전파
                 )
                 children.append(child_data)
 

@@ -128,3 +128,56 @@ class CodecsByExtensionResponse(BaseModel):
 
     extensions: List[ExtensionCodecStats]
     total_extensions: int
+
+
+# === Codec Tree (폴더별 코덱 정보) ===
+
+class FileCodecInfo(BaseModel):
+    """파일별 코덱 정보"""
+
+    id: int
+    name: str
+    path: str
+    size: int
+    size_formatted: str
+    duration: float
+    duration_formatted: str
+    extension: Optional[str] = None
+    video_codec: Optional[str] = None
+    audio_codec: Optional[str] = None
+
+
+class FolderCodecSummary(BaseModel):
+    """폴더별 코덱 요약 통계"""
+
+    total_files: int
+    files_with_codec: int
+    video_codecs: dict  # {"h264": 10, "hevc": 5}
+    audio_codecs: dict  # {"aac": 12, "ac3": 3}
+    top_video_codec: Optional[str] = None
+    top_audio_codec: Optional[str] = None
+
+
+class CodecTreeNode(BaseModel):
+    """코덱 트리 노드 (폴더 + 코덱 정보)"""
+
+    id: int
+    name: str
+    path: str
+    size: int
+    size_formatted: str
+    file_count: int
+    folder_count: int
+    duration: float
+    duration_formatted: str
+    depth: int
+    codec_summary: Optional[FolderCodecSummary] = None
+    children: List["CodecTreeNode"] = []
+    files: Optional[List[FileCodecInfo]] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Allow self-referential model
+CodecTreeNode.model_rebuild()

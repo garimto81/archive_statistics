@@ -14,14 +14,10 @@ from app.core.config import settings
 from app.models.file_stats import FileStats, FolderStats
 from app.services.utils import get_mime_type
 
-# Keywords to exclude (duplicate/variant files)
-# Matches both -clean and _clean, -stream and _stream, etc.
-EXCLUDE_KEYWORDS = {'clean', 'stream', 'proxy', 'lowres', 'temp', 'backup'}
-
 # Media extensions (for duration extraction via ffprobe)
 MEDIA_EXTENSIONS = {
     '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg',
-    '.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'
+    '.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a', '.mxf'
 }
 
 # Video extensions for work tracking (used by WorkStatus)
@@ -31,35 +27,10 @@ VIDEO_EXTENSIONS_FOR_WORK = {'.mp4'}
 def should_include_file(filename: str, extension: str) -> bool:
     """Check if file should be included in scan.
 
-    Rules (configurable via settings.SCAN_ALL_FILES):
-    1. SCAN_ALL_FILES=True: 모든 파일 스캔 (제외 확장자만 필터)
-    2. SCAN_ALL_FILES=False: 미디어 파일만 스캔
-    3. Exclude files with variant keywords (clean, stream, etc.)
+    모든 파일을 스캔합니다 (윈도우 탐색기와 동일한 결과).
+    필터링/분류는 스캔 후 별도 작업에서 수행합니다.
     """
-    ext_lower = extension.lower()
-
-    # Check excluded extensions from config
-    if ext_lower in [e.lower() for e in settings.EXCLUDED_EXTENSIONS]:
-        return False
-
-    # If not scanning all files, only include media extensions
-    if not settings.SCAN_ALL_FILES:
-        if ext_lower not in MEDIA_EXTENSIONS:
-            return False
-
-    # Check for excluded keywords (before extension)
-    name_without_ext = filename.rsplit('.', 1)[0].lower()
-
-    for keyword in EXCLUDE_KEYWORDS:
-        # Check for -keyword or _keyword at the end or followed by - or _
-        if name_without_ext.endswith(f'-{keyword}') or name_without_ext.endswith(f'_{keyword}'):
-            return False
-        # Also check for patterns like -clean-002 or _clean_v2
-        if f'-{keyword}-' in name_without_ext or f'_{keyword}_' in name_without_ext:
-            return False
-        if f'-{keyword}_' in name_without_ext or f'_{keyword}-' in name_without_ext:
-            return False
-
+    # 모든 파일 포함 (필터 없음)
     return True
 
 

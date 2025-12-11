@@ -302,6 +302,19 @@ export interface FileWithProgress {
   duration_formatted: string;
   extension: string | null;
   metadata_progress?: MetadataProgress;
+  // 코덱 정보 (Codec Explorer용)
+  video_codec?: string | null;
+  audio_codec?: string | null;
+}
+
+/** 폴더별 코덱 요약 통계 (Codec Explorer용 - FolderWithProgress 내 사용) */
+export interface FolderCodecSummary {
+  total_files: number;
+  files_with_codec: number;
+  video_codecs: Record<string, number>;
+  audio_codecs: Record<string, number>;
+  top_video_codec: string | null;
+  top_audio_codec: string | null;
 }
 
 export interface FolderWithProgress {
@@ -320,6 +333,8 @@ export interface FolderWithProgress {
   work_statuses?: WorkStatusInfo[]; // 상세 패널용 목록
   work_status?: WorkStatusInfo;     // deprecated: 하위 호환용
   hand_analysis?: HandAnalysisInfo;
+  // 코덱 정보 (Codec Explorer용)
+  codec_summary?: FolderCodecSummary;
   children: FolderWithProgress[];
   files?: FileWithProgress[];
 }
@@ -388,4 +403,56 @@ export interface BulkConnectResult {
   success_count: number;
   error_count: number;
   errors: string[];
+}
+
+// === Codec Tree Types (폴더별 코덱 정보) ===
+
+/**
+ * 파일별 코덱 정보
+ * 개별 파일의 비디오/오디오 코덱 및 메타데이터
+ */
+export interface FileCodecInfo {
+  id: number;
+  name: string;
+  path: string;
+  size: number;
+  size_formatted: string;
+  duration: number;
+  duration_formatted: string;
+  extension: string | null;
+  video_codec: string | null;
+  audio_codec: string | null;
+}
+
+/**
+ * 폴더별 코덱 요약 통계
+ * 해당 폴더 내 파일들의 코덱 분포를 집계
+ */
+export interface FolderCodecSummary {
+  total_files: number;
+  files_with_codec: number;
+  video_codecs: Record<string, number>;  // {"h264": 10, "hevc": 5}
+  audio_codecs: Record<string, number>;  // {"aac": 12, "ac3": 3}
+  top_video_codec: string | null;
+  top_audio_codec: string | null;
+}
+
+/**
+ * 코덱 트리 노드
+ * Progress Overview와 유사한 구조로 폴더 + 코덱 정보를 포함
+ */
+export interface CodecTreeNode {
+  id: number;
+  name: string;
+  path: string;
+  size: number;
+  size_formatted: string;
+  file_count: number;
+  folder_count: number;
+  duration: number;
+  duration_formatted: string;
+  depth: number;
+  codec_summary: FolderCodecSummary | null;
+  children: CodecTreeNode[];
+  files: FileCodecInfo[] | null;
 }

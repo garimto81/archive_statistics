@@ -13,9 +13,13 @@ import {
   BarChart3,
   ChevronDown,
   ChevronUp,
+  RefreshCw,
+  Cloud,
+  CloudOff,
+  AlertCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { workStatusApi, workerStatsApi } from '../services/api';
+import { workStatusApi, workerStatsApi, syncApi } from '../services/api';
 import type { WorkStatus, WorkerStats } from '../types';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -31,6 +35,116 @@ const STATUS_LABELS: Record<string, string> = {
   review: '검토',
   completed: '완료',
 };
+
+// Sync Status Indicator Component
+function SyncStatusIndicator() {
+  const queryClient = useQueryClient();
+
+  const { data: syncStatus } = useQuery({
+    queryKey: ['sync-status'],
+    queryFn: syncApi.getStatus,
+    refetchInterval: (query) => {
+      // Poll more frequently when syncing
+      const data = query.state.data;
+      if (data?.status === 'syncing') return 1000;
+      return 30000; // 30 seconds when idle
+    },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: syncApi.trigger,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+      queryClient.invalidateQueries({ queryKey: ['work-status'] });
+      queryClient.invalidateQueries({ queryKey: ['worker-stats'] });
+    },
+  });
+
+  if (!syncStatus?.enabled) {
+    return null;
+  }
+
+  const formatTime = (isoString: string | null) => {
+    if (!isoString) return '-';
+    const date = new Date(isoString);
+    return date.toLocaleString('ko-KR', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const isSyncing = syncStatus.status === 'syncing';
+  const hasError = syncStatus.status === 'error';
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 rounded-lg border border-gray-200">
+      {/* Status Icon */}
+      <div className="flex items-center gap-2">
+        {isSyncing ? (
+          <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />
+        ) : hasError ? (
+          <CloudOff className="w-4 h-4 text-red-500" />
+        ) : (
+          <Cloud className="w-4 h-4 text-green-500" />
+        )}
+        <span className="text-sm font-medium text-gray-700">Google Sheets</span>
+      </div>
+
+      {/* Last Sync Time */}
+      <div className="text-xs text-gray-500">
+        {isSyncing ? (
+          <span className="text-blue-600">Syncing...</span>
+        ) : hasError ? (
+          <span className="text-red-600 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            Error
+          </span>
+        ) : (
+          <span>Last: {formatTime(syncStatus.last_sync)}</span>
+        )}
+      </div>
+
+      {/* Sync Result */}
+      {syncStatus.last_result && !isSyncing && !hasError && (
+        <div className="text-xs text-gray-400">
+          ({syncStatus.last_result.synced_count} synced)
+        </div>
+      )}
+
+      {/* Manual Sync Button */}
+      <button
+        onClick={() => syncMutation.mutate()}
+        disabled={isSyncing || syncMutation.isPending}
+        className={clsx(
+          'p-1.5 rounded-md transition-colors',
+          isSyncing || syncMutation.isPending
+            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            : 'bg-primary-100 text-primary-600 hover:bg-primary-200'
+        )}
+        title="Sync Now"
+      >
+        <RefreshCw
+          className={clsx(
+            'w-4 h-4',
+            (isSyncing || syncMutation.isPending) && 'animate-spin'
+          )}
+        />
+      </button>
+
+      {/* Error Tooltip */}
+      {hasError && syncStatus.error && (
+        <div className="relative group">
+          <AlertCircle className="w-4 h-4 text-red-500 cursor-help" />
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+            {syncStatus.error}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Worker Card Component
 function WorkerCard({ worker, onClick }: { worker: WorkerStats; onClick: () => void }) {
@@ -335,7 +449,10 @@ export default function WorkStatusPage() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Work Status</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-gray-900">Work Status</h1>
+            <SyncStatusIndicator />
+          </div>
           <p className="text-sm text-gray-500 mt-1">
             Total: {workStatusData?.total_videos.toLocaleString()} videos |
             Done: {workStatusData?.total_done.toLocaleString()} |

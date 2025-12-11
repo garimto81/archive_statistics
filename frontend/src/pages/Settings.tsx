@@ -60,7 +60,7 @@ export default function Settings() {
                 <dl className="space-y-3">
                   <div className="flex">
                     <dt className="w-32 text-gray-500">Version</dt>
-                    <dd className="text-gray-900">1.14.0</dd>
+                    <dd className="text-gray-900">1.19.0</dd>
                   </div>
                   <div className="flex">
                     <dt className="w-32 text-gray-500">Purpose</dt>

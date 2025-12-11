@@ -50,11 +50,9 @@ class Settings(BaseSettings):
     HAND_ANALYSIS_SHEET_URL: str = "https://docs.google.com/spreadsheets/d/1_RN_W_ZQclSZA0Iez6XniCXVtjkkd5HNZwiT6l-z6d4"
 
     # Scanner Settings
-    SCAN_ALL_FILES: bool = True  # True: 모든 파일 스캔, False: 미디어만
-    EXCLUDED_EXTENSIONS: List[str] = [
-        '.tmp', '.bak', '.log', '.DS_Store', '.thumbs', '.db',
-        '.ini', '.cfg', '.cache', '.lock'
-    ]
+    # 모든 파일 스캔 (윈도우 탐색기와 동일한 결과)
+    # 필터링/분류는 스캔 후 UI에서 수행
+    SCAN_ALL_FILES: bool = True
 
     # CORS - LAN access enabled
     CORS_ORIGINS: list = [

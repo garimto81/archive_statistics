@@ -7,7 +7,7 @@ services:
       dockerfile: docker/Dockerfile.backend
     container_name: archive-stats-backend
     ports:
-      - "8000:8000"
+      - "8003:8000"
     environment:
       - DEBUG=false
       - DATABASE_URL=sqlite+aiosqlite:///./data/archive_stats.db
@@ -18,9 +18,15 @@ services:
       - NAS_PASSWORD=!@QW12qw
       - NAS_LOCAL_PATH=/mnt/nas
       - CORS_ALLOW_ALL=true
+      # Google Sheets Sync
+      - SHEETS_SYNC_ENABLED=true
+      - SHEETS_SYNC_INTERVAL_MINUTES=30
+      - GOOGLE_SERVICE_ACCOUNT_FILE=/app/credentials/service_account_key.json
+      - WORK_STATUS_SHEET_URL=https://docs.google.com/spreadsheets/d/1xuN4_1mQME_SVwnI7445JuLd8K7tRS9HDNYYJi2fm2k
     volumes:
       - ./data:/app/data
       - nas_archive:/mnt/nas:ro
+      - ./service_account_key.json:/app/credentials/service_account_key.json:ro
     restart: unless-stopped
     networks:
       - archive-network
@@ -31,7 +37,7 @@ services:
       dockerfile: docker/Dockerfile.frontend
     container_name: archive-stats-frontend
     ports:
-      - "80:80"
+      - "8082:80"
     depends_on:
       - backend
     restart: unless-stopped

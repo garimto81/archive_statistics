@@ -72,3 +72,16 @@ docker-compose.override.yml
 *.tmp
 *.temp
 .cache/
+
+# Google Service Account (NEVER commit)
+service_account_key.json
+**/credentials/*.json
+*.pem
+
+# Playwright
+frontend/playwright-report/
+frontend/test-results/
+
+# Build artifacts
+*.zip
+nul

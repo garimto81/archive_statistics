@@ -1,6 +1,8 @@
 # Progress Domain Agent Rules
 
-**Version**: 1.2.0 | **Updated**: 2025-12-10
+**Version**: 1.3.0 | **Updated**: 2025-12-11
+
+> **Note**: 매칭/합산/검증 로직은 `reconciliation-domain.md`로 분리됨
 
 ## Identity
 - **Role**: 비디오 작업 진행률 관리 전문가
@@ -162,9 +164,34 @@ NOT_STARTED ──▶ STARTED ──▶ IN_PROGRESS ──▶ COMPLETE
 ### Internal
 - `scanner.storage`: FileStats 데이터
 - `sync.import`: HandAnalysis 데이터
+- `reconciliation.*`: 매칭/합산/검증 로직 (핵심!)
 
 ### External
 - `sqlalchemy`: DB 접근
+
+---
+
+## Reconciliation 도메인과의 관계
+
+Progress 도메인은 Reconciliation 도메인의 **소비자**입니다.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Progress Domain                                             │
+│  (작업 진행률 표시)                                          │
+│         │                                                    │
+│         │ uses                                               │
+│         ▼                                                    │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Reconciliation Domain                               │    │
+│  │  • recon.matcher    → 폴더-카테고리 매칭            │    │
+│  │  • recon.aggregator → 계층 합산 (Cascading 방지)    │    │
+│  │  • recon.validator  → 불일치 감지                   │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**참조**: `.claude/agents/reconciliation-domain.md`
 
 ## Error Codes
 

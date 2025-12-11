@@ -1,6 +1,8 @@
 # Architecture: Block Agent System
 
-**Version**: 1.0.0 | **Date**: 2025-12-09 | **Status**: Draft
+**Version**: 2.0.0 | **Date**: 2025-12-11 | **Status**: Active
+
+> **v2.0 변경사항**: Reconciliation Domain 추가 (NAS-Sheets 데이터 일관성 전담)
 
 > Archive Statistics Dashboard를 위한 블럭화 + 에이전트 시스템 아키텍처
 
@@ -64,22 +66,22 @@
                          │     Agent       │
                          └────────┬────────┘
                                   │
-           ┌──────────────────────┼──────────────────────┐
-           │                      │                      │
-           ▼                      ▼                      ▼
-    ┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-    │   Domain    │       │   Domain    │       │   Domain    │
-    │   Agent     │       │   Agent     │       │   Agent     │
-    │  (Scanner)  │       │  (Progress) │       │  (Sync)     │
-    └──────┬──────┘       └──────┬──────┘       └──────┬──────┘
-           │                      │                      │
-    ┌──────┴──────┐       ┌──────┴──────┐       ┌──────┴──────┐
-    │   Blocks    │       │   Blocks    │       │   Blocks    │
-    ├─────────────┤       ├─────────────┤       ├─────────────┤
-    │ • Discovery │       │ • Video     │       │ • Sheets    │
-    │ • Metadata  │       │ • Hand      │       │ • Matching  │
-    │ • Storage   │       │ • Dashboard │       │ • Import    │
-    └─────────────┘       └─────────────┘       └─────────────┘
+           ┌──────────────┬──────────────┬──────────────┐
+           │              │              │              │
+           ▼              ▼              ▼              ▼
+    ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌─────────────┐
+    │  Domain   │  │  Domain   │  │  Domain   │  │   Domain    │
+    │  Agent    │  │  Agent    │  │  Agent    │  │   Agent     │
+    │ (Scanner) │  │(Progress) │  │  (Sync)   │  │(Reconcile)  │
+    └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └──────┬──────┘
+          │              │              │               │
+    ┌─────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐  ┌──────┴──────┐
+    │  Blocks   │  │  Blocks   │  │  Blocks   │  │   Blocks    │
+    ├───────────┤  ├───────────┤  ├───────────┤  ├─────────────┤
+    │• Discovery│  │ • Video   │  │ • Sheets  │  │ • Matcher   │
+    │• Metadata │  │ • Hand    │  │ • Matching│  │ • Aggregator│
+    │• Storage  │  │• Dashboard│  │ • Import  │  │ • Validator │
+    └───────────┘  └───────────┘  └───────────┘  └─────────────┘
 ```
 
 ### 1.4 AI 컨텍스트 최적화
@@ -288,6 +290,50 @@ def calculate_completion_status(video_duration: float, hands: List[Hand]) -> str
 | `sync.sheets` | Google Sheets 연동 | `SheetId` | `RawSheetData` |
 | `sync.matching` | NAS 파일과 시트 데이터 매칭 | `RawSheetData` | `MatchedRecords` |
 | `sync.import` | 매칭된 데이터 DB 저장 | `MatchedRecords` | `ImportResult` |
+
+#### Reconciliation Domain (NAS-Sheets 데이터 일관성) - **NEW v2.0**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  RECONCILIATION DOMAIN                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  "NAS 데이터와 Google Sheets 데이터의 일관성 보장 전문가"    │
+│                                                              │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
+│  │   recon.     │───▶│   recon.     │───▶│   recon.     │  │
+│  │   matcher    │    │  aggregator  │    │   validator  │  │
+│  │    Block     │    │    Block     │    │    Block     │  │
+│  └──────────────┘    └──────────────┘    └──────────────┘  │
+│         │                   │                   │          │
+│         ▼                   ▼                   ▼          │
+│  • 폴더-카테고리 매칭   • 계층 합산 로직     • 불일치 감지  │
+│  • 6가지 전략 관리     • Cascading 방지     • 검증 규칙    │
+│  • 점수 계산          • file_count 집계     • 경고 생성    │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| Block ID | 책임 | 입력 | 출력 |
+|----------|------|------|------|
+| `recon.matcher` | 폴더명-카테고리 매칭 (6가지 전략) | `FolderName, WorkStatuses` | `MatchResult` |
+| `recon.aggregator` | 계층 합산, Cascading 방지 | `Children, ParentIds` | `AggregatedSummary` |
+| `recon.validator` | 불일치 감지, 검증 | `FolderData` | `ValidationResult` |
+
+**핵심 문제 해결:**
+| 문제 | 블럭 | 해결 방법 |
+|------|------|----------|
+| NAS file_count 불일치 | `recon.aggregator` | work_summary 없는 자식도 file_count 합산 |
+| Cascading Match | `recon.aggregator` | parent_work_status_ids 전파 |
+| 중복 excel_done | `recon.matcher` | 최고 점수 1개만 반환 |
+| 데이터 소스 불일치 | `recon.validator` | 10% 이상 차이 시 경고 |
+
+**현재 코드 위치** (리팩토링 전):
+- `backend/app/services/progress_service.py:202-293` → `recon.matcher`
+- `backend/app/services/progress_service.py:569-665` → `recon.aggregator`
+- `backend/app/services/progress_service.py:628-630` → `recon.validator`
+
+**상세 규칙**: `.claude/agents/reconciliation-domain.md`
 
 ### 2.3 블럭 의존성 그래프
 

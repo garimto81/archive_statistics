@@ -42,3 +42,8 @@ httpx==0.26.0
 black==23.12.1
 isort==5.13.2
 flake8==7.0.0
+
+# Google Sheets Sync
+gspread>=6.0.0
+google-auth>=2.0.0
+apscheduler>=3.10.0

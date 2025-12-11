@@ -2,15 +2,62 @@
 
 ## Identity
 - **Role**: 비즈니스 로직 처리 전문가
-- **Domain**: Scanner (primary)
+- **Domain**: Scanner, Progress, Sync
 - **Scope**: `backend/app/services/` 내부만
 
 ## Files in Scope
 
-| File | Block | 책임 |
-|------|-------|------|
-| `scanner.py` | scanner.metadata | NAS 스캔 및 메타데이터 추출 |
-| `utils.py` | scanner.metadata | MIME 타입 분석, 유틸리티 |
+| File | Block Prefix | 책임 |
+|------|--------------|------|
+| `progress_service.py` | `progress.*` | 폴더-카테고리 매칭, 진행률 계산 (핵심) |
+| `scanner.py` | `scanner.*` | NAS 스캔 및 메타데이터 추출 |
+| `sheets_sync.py` | `sync.*` | Google Sheets 동기화 |
+| `utils.py` | - | 공통 유틸리티 (format_size, format_duration) |
+
+---
+
+## 핵심 파일: progress_service.py (921 lines)
+
+### Block Index
+
+| Block ID | Lines | Description | When to Read |
+|----------|-------|-------------|--------------|
+| `progress.utils` | 25-55 | 문자열 정규화, 유사도 계산 | 매칭 로직 디버깅 |
+| `progress.data_loader` | 105-160 | DB 데이터 로드 | 데이터 소스 문제 |
+| `progress.matcher` | 162-285 | 폴더-카테고리 매칭 | 매칭 오류 수정 |
+| `progress.file_matcher` | 287-323 | 파일-핸드 매칭 | 파일 레벨 진행률 |
+| `progress.aggregator` | 325-642 | 하이어라키 합산, 코덱 집계 | 진행률 계산 오류 |
+| `progress.file_query` | 644-708 | 파일 목록 조회 | 파일 리스트 API |
+| `progress.folder_detail` | 710-854 | 폴더 상세 조회 | 상세 패널 API |
+| `progress.file_detail` | 856-918 | 파일 상세 조회 | 개별 파일 API |
+
+### 매칭 전략 우선순위
+
+```
+1. exact (1.0)         - "GOG" == "GOG"
+2. prefix (0.9)        - 카테고리가 폴더명으로 시작
+3. folder_prefix (0.85) - 폴더명이 카테고리로 시작
+4. word (0.8)          - 단어 포함
+5. year (0.7)          - 연도 매칭
+```
+
+### 진행률 계산 규칙
+
+- 90% 이상 = 100% (완료 처리)
+- 하이어라키 합산: `부모 = sum(자식.total_done) / sum(자식.total_files)`
+
+### 공통 함수 Import 규칙
+
+```python
+# ✅ 올바른 사용
+from app.services.utils import format_size, format_duration
+
+# ❌ 금지: 중복 정의
+def format_size(size):  # 절대 금지!
+    ...
+```
+
+---
 
 ## Core Class: ArchiveScanner
 

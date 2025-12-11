@@ -16,6 +16,9 @@ from app.schemas.stats import (
     CodecCount,
     ExtensionCodecStats,
     CodecsByExtensionResponse,
+    CodecTreeNode,
+    FolderCodecSummary,
+    FileCodecInfo,
 )
 from app.services.utils import format_size, format_duration
 
@@ -57,12 +60,11 @@ async def get_stats_summary(
         total_folders = folder_result.scalar() or 0
         file_type_count = len(ext_list)
     else:
-        # No filter - get totals from folder stats (root folder)
+        # No filter - get totals from root folder (depth == 0) for size/files/duration
         result = await db.execute(
             select(
                 func.sum(FolderStats.total_size).label("total_size"),
                 func.sum(FolderStats.file_count).label("total_files"),
-                func.count(FolderStats.id).label("total_folders"),
                 func.sum(FolderStats.total_duration).label("total_duration"),
             ).where(FolderStats.depth == 0)
         )
@@ -71,7 +73,12 @@ async def get_stats_summary(
         total_files = stats.total_files or 0
         total_size = stats.total_size or 0
         total_duration = stats.total_duration or 0.0
-        total_folders = stats.total_folders or 0
+
+        # Get total folder count (all folders including root)
+        folder_count_result = await db.execute(
+            select(func.count(FolderStats.id))
+        )
+        total_folders = folder_count_result.scalar() or 0
 
         # If folder duration is 0, get it directly from files (fallback)
         if total_duration == 0:
@@ -408,4 +415,321 @@ async def get_codecs_by_extension(
     return CodecsByExtensionResponse(
         extensions=extensions_data,
         total_extensions=len(extensions_data),
+    )
+
+
+@router.get("/codecs/tree", response_model=List[CodecTreeNode])
+async def get_codec_tree(
+    path: Optional[str] = Query(None, description="Starting folder path"),
+    depth: int = Query(default=2, ge=1, le=5, description="Tree depth"),
+    include_files: bool = Query(default=False, description="Include file list"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get codec information in folder tree structure.
+
+    폴더 트리 구조로 코덱 정보를 반환합니다.
+    Progress Overview와 유사한 구조로 lazy loading을 지원합니다.
+    """
+
+    async def build_codec_tree(
+        folder: FolderStats,
+        current_depth: int,
+        max_depth: int,
+        include_files: bool,
+    ) -> dict:
+        """재귀적으로 코덱 트리 구축"""
+
+        # 폴더 내 파일들의 코덱 정보 집계
+        file_query = select(
+            FileStats.video_codec,
+            FileStats.audio_codec,
+            func.count(FileStats.id).label("count"),
+        ).where(
+            FileStats.folder_path == folder.path
+        ).group_by(
+            FileStats.video_codec,
+            FileStats.audio_codec,
+        )
+
+        file_result = await db.execute(file_query)
+        codec_rows = file_result.fetchall()
+
+        # 코덱 통계 집계
+        video_codecs = {}
+        audio_codecs = {}
+        files_with_codec = 0
+
+        for row in codec_rows:
+            if row.video_codec:
+                video_codecs[row.video_codec] = video_codecs.get(row.video_codec, 0) + row.count
+                files_with_codec += row.count
+            if row.audio_codec:
+                audio_codecs[row.audio_codec] = audio_codecs.get(row.audio_codec, 0) + row.count
+
+        # 최다 코덱 찾기
+        top_video = max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
+        top_audio = max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
+
+        codec_summary = FolderCodecSummary(
+            total_files=folder.file_count,
+            files_with_codec=files_with_codec,
+            video_codecs=video_codecs,
+            audio_codecs=audio_codecs,
+            top_video_codec=top_video,
+            top_audio_codec=top_audio,
+        ) if video_codecs or audio_codecs else None
+
+        # 파일 목록 (옵션)
+        files = None
+        if include_files:
+            files_query = select(FileStats).where(
+                FileStats.folder_path == folder.path,
+                FileStats.video_codec.isnot(None),
+            ).order_by(FileStats.name).limit(100)
+
+            files_result = await db.execute(files_query)
+            file_list = files_result.scalars().all()
+
+            files = [
+                FileCodecInfo(
+                    id=f.id,
+                    name=f.name,
+                    path=f.path,
+                    size=f.size,
+                    size_formatted=format_size(f.size),
+                    duration=f.duration or 0,
+                    duration_formatted=format_duration(f.duration or 0),
+                    extension=f.extension,
+                    video_codec=f.video_codec,
+                    audio_codec=f.audio_codec,
+                )
+                for f in file_list
+            ]
+
+        # 자식 폴더 (재귀)
+        children = []
+        if current_depth < max_depth:
+            child_result = await db.execute(
+                select(FolderStats)
+                .where(FolderStats.parent_path == folder.path)
+                .order_by(FolderStats.total_size.desc())
+            )
+            child_folders = child_result.scalars().all()
+
+            for child in child_folders:
+                child_data = await build_codec_tree(
+                    child, current_depth + 1, max_depth, include_files
+                )
+                children.append(child_data)
+
+                # 자식 폴더의 코덱 정보를 부모에 합산
+                child_cs = child_data.get("codec_summary")
+                if child_cs:
+                    # Pydantic 객체의 속성에 직접 접근
+                    for codec, count in (child_cs.video_codecs or {}).items():
+                        video_codecs[codec] = video_codecs.get(codec, 0) + count
+                    for codec, count in (child_cs.audio_codecs or {}).items():
+                        audio_codecs[codec] = audio_codecs.get(codec, 0) + count
+                    files_with_codec += child_cs.files_with_codec or 0
+
+            # 합산 후 codec_summary 업데이트
+            if video_codecs or audio_codecs:
+                top_video = max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
+                top_audio = max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
+                codec_summary = FolderCodecSummary(
+                    total_files=folder.file_count,
+                    files_with_codec=files_with_codec,
+                    video_codecs=video_codecs,
+                    audio_codecs=audio_codecs,
+                    top_video_codec=top_video,
+                    top_audio_codec=top_audio,
+                )
+
+        return {
+            "id": folder.id,
+            "name": folder.name,
+            "path": folder.path,
+            "size": folder.total_size,
+            "size_formatted": format_size(folder.total_size),
+            "file_count": folder.file_count,
+            "folder_count": folder.folder_count,
+            "duration": folder.total_duration,
+            "duration_formatted": format_duration(folder.total_duration),
+            "depth": folder.depth,
+            "codec_summary": codec_summary,
+            "children": children,
+            "files": files,
+        }
+
+    # 시작 폴더 조회
+    if path:
+        query = select(FolderStats).where(FolderStats.parent_path == path)
+    else:
+        query = select(FolderStats).where(FolderStats.depth == 0)
+
+    result = await db.execute(query.order_by(FolderStats.total_size.desc()))
+    folders = result.scalars().all()
+
+    tree = []
+    for folder in folders:
+        folder_data = await build_codec_tree(folder, 0, depth, include_files)
+        tree.append(folder_data)
+
+    return tree
+
+
+@router.get("/codecs/folder/{folder_path:path}", response_model=CodecTreeNode)
+async def get_codec_folder_detail(
+    folder_path: str,
+    include_files: bool = Query(default=True, description="Include file list"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get codec information for a specific folder.
+
+    특정 폴더의 코덱 정보와 자식 폴더 목록을 반환합니다.
+    """
+    from urllib.parse import unquote
+
+    decoded_path = unquote(folder_path)
+    if not decoded_path.startswith("/"):
+        decoded_path = "/" + decoded_path
+
+    # 폴더 조회
+    folder_result = await db.execute(
+        select(FolderStats).where(FolderStats.path == decoded_path)
+    )
+    folder = folder_result.scalar_one_or_none()
+
+    if not folder:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Folder not found: {decoded_path}")
+
+    # 현재 폴더의 코덱 통계
+    file_query = select(
+        FileStats.video_codec,
+        FileStats.audio_codec,
+        func.count(FileStats.id).label("count"),
+    ).where(
+        FileStats.folder_path == decoded_path
+    ).group_by(
+        FileStats.video_codec,
+        FileStats.audio_codec,
+    )
+
+    file_result = await db.execute(file_query)
+    codec_rows = file_result.fetchall()
+
+    video_codecs = {}
+    audio_codecs = {}
+    files_with_codec = 0
+
+    for row in codec_rows:
+        if row.video_codec:
+            video_codecs[row.video_codec] = video_codecs.get(row.video_codec, 0) + row.count
+            files_with_codec += row.count
+        if row.audio_codec:
+            audio_codecs[row.audio_codec] = audio_codecs.get(row.audio_codec, 0) + row.count
+
+    top_video = max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
+    top_audio = max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
+
+    codec_summary = FolderCodecSummary(
+        total_files=folder.file_count,
+        files_with_codec=files_with_codec,
+        video_codecs=video_codecs,
+        audio_codecs=audio_codecs,
+        top_video_codec=top_video,
+        top_audio_codec=top_audio,
+    ) if video_codecs or audio_codecs else None
+
+    # 파일 목록
+    files = None
+    if include_files:
+        files_query = select(FileStats).where(
+            FileStats.folder_path == decoded_path,
+        ).order_by(FileStats.name).limit(200)
+
+        files_result = await db.execute(files_query)
+        file_list = files_result.scalars().all()
+
+        files = [
+            FileCodecInfo(
+                id=f.id,
+                name=f.name,
+                path=f.path,
+                size=f.size,
+                size_formatted=format_size(f.size),
+                duration=f.duration or 0,
+                duration_formatted=format_duration(f.duration or 0),
+                extension=f.extension,
+                video_codec=f.video_codec,
+                audio_codec=f.audio_codec,
+            )
+            for f in file_list
+        ]
+
+    # 자식 폴더
+    child_result = await db.execute(
+        select(FolderStats)
+        .where(FolderStats.parent_path == decoded_path)
+        .order_by(FolderStats.total_size.desc())
+    )
+    child_folders = child_result.scalars().all()
+
+    children = []
+    for child in child_folders:
+        # 자식 폴더의 코덱 통계도 간략히 조회
+        child_codec_query = select(
+            FileStats.video_codec,
+            func.count(FileStats.id).label("count"),
+        ).where(
+            FileStats.folder_path == child.path,
+            FileStats.video_codec.isnot(None),
+        ).group_by(FileStats.video_codec)
+
+        child_codec_result = await db.execute(child_codec_query)
+        child_codec_rows = child_codec_result.fetchall()
+
+        child_video_codecs = {row.video_codec: row.count for row in child_codec_rows}
+        child_top_video = max(child_video_codecs.items(), key=lambda x: x[1])[0] if child_video_codecs else None
+
+        child_codec_summary = FolderCodecSummary(
+            total_files=child.file_count,
+            files_with_codec=sum(child_video_codecs.values()),
+            video_codecs=child_video_codecs,
+            audio_codecs={},
+            top_video_codec=child_top_video,
+            top_audio_codec=None,
+        ) if child_video_codecs else None
+
+        children.append(CodecTreeNode(
+            id=child.id,
+            name=child.name,
+            path=child.path,
+            size=child.total_size,
+            size_formatted=format_size(child.total_size),
+            file_count=child.file_count,
+            folder_count=child.folder_count,
+            duration=child.total_duration,
+            duration_formatted=format_duration(child.total_duration),
+            depth=child.depth,
+            codec_summary=child_codec_summary,
+            children=[],
+            files=None,
+        ))
+
+    return CodecTreeNode(
+        id=folder.id,
+        name=folder.name,
+        path=folder.path,
+        size=folder.total_size,
+        size_formatted=format_size(folder.total_size),
+        file_count=folder.file_count,
+        folder_count=folder.folder_count,
+        duration=folder.total_duration,
+        duration_formatted=format_duration(folder.total_duration),
+        depth=folder.depth,
+        codec_summary=codec_summary,
+        children=children,
+        files=files,
     )

@@ -5,10 +5,26 @@
  * - metadata db: 채워진 바 (보라색)
  * - archive db: 세로 마커선 (파란색)
  *
+ * displayMode:
+ * - 'progress': 작업 진행률 표시 (기본값)
+ * - 'codec': 코덱 정보 표시 (Codec Explorer용)
+ *
+ * === BLOCK INDEX ===
+ * | Block ID              | Lines       | Description              |
+ * |-----------------------|-------------|--------------------------|
+ * | tree.types            | 44-79       | 타입 정의 (Props)        |
+ * | tree.helpers          | 81-154      | getWorkSummary 등 헬퍼   |
+ * | tree.file_node        | 156-237     | FileNode 컴포넌트        |
+ * | tree.folder_node      | 239-444     | FolderNode 컴포넌트      |
+ * | tree.legend           | 446-490     | ProgressLegend 컴포넌트  |
+ * | tree.main             | 492-658     | 메인 컴포넌트 (export)   |
+ * | tree.detail_panel     | 660-916     | FolderProgressDetail     |
+ * ====================
+ *
  * Block: components.folder-tree-progress
  */
 import { useState, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronRight,
   ChevronDown,
@@ -17,19 +33,31 @@ import {
   FileVideo,
   RefreshCw,
   AlertCircle,
+  Film,
+  Music,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { progressApi } from '../services/api';
 import ProgressBar from './ProgressBar';
-import type { FolderWithProgress, FileWithProgress, WorkSummary } from '../types';
+import type { FolderWithProgress, FileWithProgress, WorkSummary, FolderCodecSummary } from '../types';
 
-// ==================== Types ====================
+// === BLOCK: tree.types ===
+// Description: Props 및 내부 타입 정의
+// Dependencies: ../types (FolderWithProgress, FileWithProgress, WorkSummary, FolderCodecSummary)
+// AI Context: 컴포넌트 구조 이해 시 이 블록만 읽으면 됨
+
+/** 표시 모드: progress(작업 진행률) 또는 codec(코덱 정보) */
+type DisplayMode = 'progress' | 'codec';
 
 interface FolderTreeWithProgressProps {
   initialPath?: string;
   initialDepth?: number;
   showFiles?: boolean;
   selectedExtensions?: string[];
+  /** 표시 모드: 'progress' (기본) 또는 'codec' */
+  displayMode?: DisplayMode;
+  /** Lazy Loading 활성화 (폴더 클릭 시 자식 동적 로드) */
+  enableLazyLoading?: boolean;
   onFolderSelect?: (folder: FolderWithProgress) => void;
   onFileSelect?: (file: FileWithProgress) => void;
 }
@@ -39,19 +67,26 @@ interface FolderNodeProps {
   level: number;
   showFiles: boolean;
   selectedPath?: string;
+  displayMode: DisplayMode;
   onFolderSelect?: (folder: FolderWithProgress) => void;
   onFileSelect?: (file: FileWithProgress) => void;
   onLoadChildren?: (path: string) => void;
+  isLoadingChildren?: boolean;
 }
 
 interface FileNodeProps {
   file: FileWithProgress;
   level: number;
   selectedPath?: string;
+  displayMode: DisplayMode;
   onSelect?: (file: FileWithProgress) => void;
 }
+// === END BLOCK: tree.types ===
 
-// ==================== Helper Functions ====================
+// === BLOCK: tree.helpers ===
+// Description: getWorkSummary, updateFolderChildren 등 유틸리티 함수
+// Dependencies: FolderWithProgress, WorkSummary types
+// AI Context: work_summary 계산 로직 디버깅 시 이 블록 참조
 
 // 디버깅 플래그 (콘솔 로그 활성화)
 const DEBUG_WORK_SUMMARY = true;
@@ -103,12 +138,39 @@ function getWorkSummary(folder: FolderWithProgress): WorkSummary | null {
 // Note: calculateFolderMetadataProgress, calculateFolderArchiveProgress 함수 제거됨
 // work_summary 기반으로 단순화됨
 
+/**
+ * 폴더 트리에서 특정 경로의 자식을 업데이트하는 헬퍼 함수
+ * Lazy Loading에서 동적으로 로드된 자식을 기존 트리에 병합
+ */
+function updateFolderChildren(
+  folders: FolderWithProgress[],
+  parentPath: string,
+  children: FolderWithProgress[]
+): FolderWithProgress[] {
+  return folders.map(folder => {
+    if (folder.path === parentPath) {
+      return { ...folder, children };
+    }
+    if (folder.children && folder.children.length > 0) {
+      return {
+        ...folder,
+        children: updateFolderChildren(folder.children, parentPath, children)
+      };
+    }
+    return folder;
+  });
+}
+// === END BLOCK: tree.helpers ===
 
-// ==================== FileNode Component ====================
+// === BLOCK: tree.file_node ===
+// Description: 파일 노드 렌더링 컴포넌트
+// Dependencies: FileWithProgress, DisplayMode, ProgressBar
+// AI Context: 파일 표시 UI 수정 시 이 블록만 수정
 
-function FileNode({ file, level, selectedPath, onSelect }: FileNodeProps) {
+function FileNode({ file, level, selectedPath, displayMode, onSelect }: FileNodeProps) {
   const isSelected = selectedPath === file.path;
   const hasProgress = file.metadata_progress && file.metadata_progress.hand_count > 0;
+  const isCodecMode = displayMode === 'codec';
 
   return (
     <div
@@ -137,56 +199,96 @@ function FileNode({ file, level, selectedPath, onSelect }: FileNodeProps) {
         {file.duration_formatted}
       </span>
 
-      {/* Progress Bar (if has metadata) */}
-      {hasProgress && file.metadata_progress && (
-        <div className="flex-1 max-w-[150px]">
-          <ProgressBar
-            metadataProgress={file.metadata_progress.progress_percent}
-            isComplete={file.metadata_progress.is_complete}
-            size="sm"
-            showLabel={false}
-            showPercentage={false}
-          />
+      {/* Codec Mode: Show codec info */}
+      {isCodecMode && (
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {file.video_codec && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+              <Film className="w-3 h-3 mr-0.5" />
+              {file.video_codec}
+            </span>
+          )}
+          {file.audio_codec && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700">
+              <Music className="w-3 h-3 mr-0.5" />
+              {file.audio_codec}
+            </span>
+          )}
+          {!file.video_codec && !file.audio_codec && (
+            <span className="text-xs text-gray-300">-</span>
+          )}
         </div>
       )}
 
-      {/* Progress Percentage */}
-      {hasProgress && file.metadata_progress && (
-        <span
-          className={clsx(
-            'text-xs ml-2 flex-shrink-0',
-            file.metadata_progress.is_complete ? 'text-green-600' : 'text-gray-500'
-          )}
-        >
-          {file.metadata_progress.progress_percent.toFixed(0)}%
-          {file.metadata_progress.is_complete && ' ✓'}
-        </span>
+      {/* Progress Mode: Show progress bar */}
+      {!isCodecMode && hasProgress && file.metadata_progress && (
+        <>
+          <div className="flex-1 max-w-[150px]">
+            <ProgressBar
+              metadataProgress={file.metadata_progress.progress_percent}
+              isComplete={file.metadata_progress.is_complete}
+              size="sm"
+              showLabel={false}
+              showPercentage={false}
+            />
+          </div>
+          <span
+            className={clsx(
+              'text-xs ml-2 flex-shrink-0',
+              file.metadata_progress.is_complete ? 'text-green-600' : 'text-gray-500'
+            )}
+          >
+            {file.metadata_progress.progress_percent.toFixed(0)}%
+            {file.metadata_progress.is_complete && ' ✓'}
+          </span>
+        </>
       )}
     </div>
   );
 }
+// === END BLOCK: tree.file_node ===
 
-// ==================== FolderNode Component ====================
+// === BLOCK: tree.folder_node ===
+// Description: 폴더 노드 렌더링 컴포넌트 (재귀적)
+// Dependencies: FolderWithProgress, DisplayMode, ProgressBar, FileNode, getWorkSummary
+// AI Context: 폴더 트리 UI 및 Lazy Loading 수정 시 이 블록 참조
 
 function FolderNode({
   folder,
   level,
   showFiles,
   selectedPath,
+  displayMode,
   onFolderSelect,
   onFileSelect,
+  onLoadChildren,
+  isLoadingChildren,
 }: FolderNodeProps) {
   const [isOpen, setIsOpen] = useState(level < 1);
   const hasChildren = folder.children && folder.children.length > 0;
   const hasFiles = showFiles && folder.files && folder.files.length > 0;
   const isSelected = selectedPath === folder.path;
+  const isCodecMode = displayMode === 'codec';
 
-  // 작업 진행률 요약 (work_summary)
-  const workSummary = getWorkSummary(folder);
+  // 작업 진행률 요약 (work_summary) - progress 모드에서만 사용
+  const workSummary = !isCodecMode ? getWorkSummary(folder) : null;
+
+  // 코덱 요약 (codec_summary) - codec 모드에서만 사용
+  const codecSummary = folder.codec_summary as FolderCodecSummary | null | undefined;
+
+  // 폴더에 자식이 있을 수 있는지 (folder_count > 0)
+  const mayHaveChildren = folder.folder_count > 0;
 
   const handleClick = () => {
-    if (hasChildren || hasFiles) {
-      setIsOpen(!isOpen);
+    const willOpen = !isOpen;
+
+    // Lazy Loading: 자식이 없지만 있을 수 있는 경우 로드 요청
+    if (willOpen && !hasChildren && mayHaveChildren && onLoadChildren) {
+      onLoadChildren(folder.path);
+    }
+
+    if (hasChildren || hasFiles || mayHaveChildren) {
+      setIsOpen(willOpen);
     }
     onFolderSelect?.(folder);
   };
@@ -204,7 +306,9 @@ function FolderNode({
       >
         {/* Expand/Collapse Icon */}
         <span className="w-5 h-5 flex items-center justify-center mr-1 flex-shrink-0">
-          {hasChildren || hasFiles ? (
+          {isLoadingChildren ? (
+            <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />
+          ) : hasChildren || hasFiles || mayHaveChildren ? (
             isOpen ? (
               <ChevronDown className="w-4 h-4 text-gray-500" />
             ) : (
@@ -234,48 +338,78 @@ function FolderNode({
           {folder.file_count}개 · {folder.size_formatted}
         </span>
 
-        {/* Progress Bar - 모든 폴더에 표시 */}
-        <div className="flex-1 max-w-[150px] ml-3">
-          {workSummary ? (
-            <ProgressBar
-              metadataProgress={workSummary.combined_progress}
-              isComplete={workSummary.combined_progress >= 100}
-              size="sm"
-              showLabel={false}
-              showPercentage={false}
-            />
-          ) : (
-            /* 작업 없는 폴더: 회색 빈 프로그레스바 */
-            <div className="w-full bg-gray-200 rounded-full h-1.5">
-              <div className="h-1.5 rounded-full bg-gray-300 w-0" />
-            </div>
-          )}
-        </div>
+        {/* Codec Mode: Show codec summary */}
+        {isCodecMode && (
+          <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+            {codecSummary?.top_video_codec && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+                <Film className="w-3 h-3 mr-0.5" />
+                {codecSummary.top_video_codec}
+              </span>
+            )}
+            {codecSummary?.top_audio_codec && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700">
+                <Music className="w-3 h-3 mr-0.5" />
+                {codecSummary.top_audio_codec}
+              </span>
+            )}
+            {codecSummary && (
+              <span className="text-xs text-gray-400">
+                ({codecSummary.files_with_codec}/{codecSummary.total_files})
+              </span>
+            )}
+            {!codecSummary && (
+              <span className="text-xs text-gray-300">코덱 정보 없음</span>
+            )}
+          </div>
+        )}
 
-        {/* Progress Text */}
-        <div className="flex items-center gap-1 ml-2 flex-shrink-0 text-xs min-w-[100px]">
-          {workSummary ? (
-            <>
-              <span className={clsx(
-                workSummary.combined_progress >= 100 ? 'text-green-600 font-medium' : 'text-blue-600'
-              )}>
-                {workSummary.combined_progress.toFixed(0)}%
-              </span>
-              <span className="text-gray-400">
-                ({workSummary.total_done}/{workSummary.total_files})
-              </span>
-              {/* 시트 원본값 표시 */}
-              <span
-                className="text-orange-500 ml-1 cursor-help"
-                title={`📊 시트: ${workSummary.sheets_excel_done}/${workSummary.sheets_total_videos}`}
-              >
-                📊
-              </span>
-            </>
-          ) : (
-            <span className="text-gray-300">-</span>
-          )}
-        </div>
+        {/* Progress Mode: Progress Bar */}
+        {!isCodecMode && (
+          <>
+            <div className="flex-1 max-w-[150px] ml-3">
+              {workSummary ? (
+                <ProgressBar
+                  metadataProgress={workSummary.combined_progress}
+                  isComplete={workSummary.combined_progress >= 100}
+                  size="sm"
+                  showLabel={false}
+                  showPercentage={false}
+                />
+              ) : (
+                /* 작업 없는 폴더: 회색 빈 프로그레스바 */
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div className="h-1.5 rounded-full bg-gray-300 w-0" />
+                </div>
+              )}
+            </div>
+
+            {/* Progress Text */}
+            <div className="flex items-center gap-1 ml-2 flex-shrink-0 text-xs min-w-[100px]">
+              {workSummary ? (
+                <>
+                  <span className={clsx(
+                    workSummary.combined_progress >= 100 ? 'text-green-600 font-medium' : 'text-blue-600'
+                  )}>
+                    {workSummary.combined_progress.toFixed(0)}%
+                  </span>
+                  <span className="text-gray-400">
+                    ({workSummary.total_done}/{workSummary.total_files})
+                  </span>
+                  {/* 시트 원본값 표시 */}
+                  <span
+                    className="text-orange-500 ml-1 cursor-help"
+                    title={`📊 시트: ${workSummary.sheets_excel_done}/${workSummary.sheets_total_videos}`}
+                  >
+                    📊
+                  </span>
+                </>
+              ) : (
+                <span className="text-gray-300">-</span>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Children Folders */}
@@ -288,10 +422,20 @@ function FolderNode({
               level={level + 1}
               showFiles={showFiles}
               selectedPath={selectedPath}
+              displayMode={displayMode}
               onFolderSelect={onFolderSelect}
               onFileSelect={onFileSelect}
+              onLoadChildren={onLoadChildren}
             />
           ))}
+        </div>
+      )}
+
+      {/* Loading indicator for lazy loading */}
+      {isOpen && !hasChildren && mayHaveChildren && isLoadingChildren && (
+        <div className="flex items-center py-2" style={{ paddingLeft: `${(level + 1) * 16 + 8}px` }}>
+          <RefreshCw className="w-4 h-4 text-gray-400 animate-spin mr-2" />
+          <span className="text-xs text-gray-400">로딩 중...</span>
         </div>
       )}
 
@@ -304,6 +448,7 @@ function FolderNode({
               file={file}
               level={level + 1}
               selectedPath={selectedPath}
+              displayMode={displayMode}
               onSelect={onFileSelect}
             />
           ))}
@@ -312,10 +457,39 @@ function FolderNode({
     </div>
   );
 }
+// === END BLOCK: tree.folder_node ===
 
-// ==================== Legend Component ====================
+// === BLOCK: tree.legend ===
+// Description: 범례 컴포넌트 (Progress/Codec 모드별)
+// Dependencies: DisplayMode
+// AI Context: 범례 UI 수정 시 이 블록만 수정
 
-function ProgressLegend() {
+function ProgressLegend({ displayMode }: { displayMode: DisplayMode }) {
+  if (displayMode === 'codec') {
+    return (
+      <div className="flex items-center gap-4 text-xs text-gray-500 px-4 py-2 bg-gray-50 border-b border-gray-100">
+        <div className="flex items-center gap-1">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+            <Film className="w-3 h-3 mr-0.5" />
+            Video
+          </span>
+          <span>비디오 코덱</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-100 text-green-700">
+            <Music className="w-3 h-3 mr-0.5" />
+            Audio
+          </span>
+          <span>오디오 코덱</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-gray-400">(N/M)</span>
+          <span>코덱 정보 있는 파일 수</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-4 text-xs text-gray-500 px-4 py-2 bg-gray-50 border-b border-gray-100">
       <div className="flex items-center gap-1">
@@ -333,19 +507,30 @@ function ProgressLegend() {
     </div>
   );
 }
+// === END BLOCK: tree.legend ===
 
-// ==================== Main Component ====================
+// === BLOCK: tree.main ===
+// Description: 메인 FolderTreeWithProgress export 컴포넌트
+// Dependencies: progressApi, useQuery, FolderNode, ProgressLegend
+// AI Context: API 호출, 상태관리, Lazy Loading 로직 수정 시 참조
 
 export default function FolderTreeWithProgress({
   initialPath,
   initialDepth = 2,
   showFiles = false,
   selectedExtensions,
+  displayMode = 'progress',
+  enableLazyLoading = false,
   onFolderSelect,
   onFileSelect,
 }: FolderTreeWithProgressProps) {
   const [selectedPath, setSelectedPath] = useState<string | undefined>();
+  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
 
+  const isCodecMode = displayMode === 'codec';
+
+  // include_codecs 파라미터 추가 (codec 모드일 때)
   const {
     data: folders,
     isLoading,
@@ -353,11 +538,51 @@ export default function FolderTreeWithProgress({
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['folder-tree-progress', initialPath, initialDepth, showFiles, selectedExtensions],
-    queryFn: () => progressApi.getTreeWithProgress(initialPath, initialDepth, showFiles, selectedExtensions),
+    queryKey: ['folder-tree-progress', initialPath, initialDepth, showFiles, selectedExtensions, displayMode],
+    queryFn: () => progressApi.getTreeWithProgress(
+      initialPath,
+      initialDepth,
+      showFiles,
+      selectedExtensions,
+      isCodecMode  // include_codecs
+    ),
     refetchInterval: 60000, // 60초마다 자동 갱신
     staleTime: 30000,
   });
+
+  // Lazy Loading: 폴더 자식 로드
+  const handleLoadChildren = useCallback(async (path: string) => {
+    if (!enableLazyLoading || loadingPaths.has(path)) return;
+
+    setLoadingPaths(prev => new Set(prev).add(path));
+
+    try {
+      const children = await progressApi.getTreeWithProgress(
+        path,
+        2, // 하위 2단계
+        showFiles,
+        selectedExtensions,
+        isCodecMode
+      );
+
+      // 캐시 업데이트
+      queryClient.setQueryData(
+        ['folder-tree-progress', initialPath, initialDepth, showFiles, selectedExtensions, displayMode],
+        (old: FolderWithProgress[] | undefined) => {
+          if (!old) return old;
+          return updateFolderChildren(old, path, children);
+        }
+      );
+    } catch (err) {
+      console.error('Failed to load children:', err);
+    } finally {
+      setLoadingPaths(prev => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    }
+  }, [enableLazyLoading, loadingPaths, showFiles, selectedExtensions, isCodecMode, queryClient, initialPath, initialDepth, displayMode]);
 
   const handleFolderSelect = useCallback(
     (folder: FolderWithProgress) => {
@@ -375,11 +600,14 @@ export default function FolderTreeWithProgress({
     [onFileSelect]
   );
 
+  // 제목 (모드에 따라 변경)
+  const title = isCodecMode ? 'Codec Explorer' : 'Progress Overview';
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-full flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-        <h3 className="font-semibold text-gray-900">Progress Overview</h3>
+        <h3 className="font-semibold text-gray-900">{title}</h3>
         <button
           onClick={() => refetch()}
           disabled={isFetching}
@@ -396,7 +624,7 @@ export default function FolderTreeWithProgress({
       </div>
 
       {/* Legend */}
-      <ProgressLegend />
+      <ProgressLegend displayMode={displayMode} />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
@@ -438,8 +666,11 @@ export default function FolderTreeWithProgress({
                 level={0}
                 showFiles={showFiles}
                 selectedPath={selectedPath}
+                displayMode={displayMode}
                 onFolderSelect={handleFolderSelect}
                 onFileSelect={handleFileSelect}
+                onLoadChildren={enableLazyLoading ? handleLoadChildren : undefined}
+                isLoadingChildren={loadingPaths.has(folder.path)}
               />
             ))}
           </div>
@@ -448,6 +679,12 @@ export default function FolderTreeWithProgress({
     </div>
   );
 }
+// === END BLOCK: tree.main ===
+
+// === BLOCK: tree.detail_panel ===
+// Description: 선택된 폴더의 상세 진행률 패널
+// Dependencies: progressApi, getWorkSummary, FileWithProgress
+// AI Context: 상세 패널 UI 및 데이터 표시 수정 시 참조
 
 /**
  * FolderProgressDetail - 단일 폴더 상세 진행률
@@ -706,3 +943,4 @@ export function FolderProgressDetail({
     </div>
   );
 }
+// === END BLOCK: tree.detail_panel ===

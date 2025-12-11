@@ -7,7 +7,18 @@ Progress Service - 통합 진행률 계산
 3. 하이어라키: 모든 폴더 + 파일 출력
 4. 진행률 바: 최상위부터 모든 레벨에서 표시
 
-Block: progress.service
+=== BLOCK INDEX ===
+| Block ID                | Lines     | Description              |
+|-------------------------|-----------|--------------------------|
+| progress.utils          | 25-55     | 정규화/유사도 헬퍼 함수  |
+| progress.data_loader    | 105-160   | DB 데이터 로드           |
+| progress.matcher        | 162-285   | 폴더-카테고리 매칭       |
+| progress.file_matcher   | 287-323   | 파일-핸드 매칭           |
+| progress.aggregator     | 325-642   | 하이어라키 합산/코덱집계 |
+| progress.file_query     | 644-708   | 파일 목록 조회           |
+| progress.folder_detail  | 710-854   | 폴더 상세 조회           |
+| progress.file_detail    | 856-918   | 파일 상세 조회           |
+===================
 """
 import re
 import logging
@@ -18,35 +29,16 @@ from sqlalchemy import select, func
 from app.models.file_stats import FolderStats, FileStats
 from app.models.hand_analysis import HandAnalysis
 from app.models.work_status import WorkStatus
+# 중복 제거: format_size, format_duration을 공통 utils에서 import
+from app.services.utils import format_size, format_duration
 
 logger = logging.getLogger(__name__)
 
 
-# ==================== Helper Functions ====================
-
-def format_duration(seconds: float) -> str:
-    """초를 HH:MM:SS 형식으로 변환"""
-    if not seconds or seconds <= 0:
-        return "00:00:00"
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-
-
-def format_size(size_bytes: int) -> str:
-    """바이트를 읽기 쉬운 형식으로 변환"""
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    elif size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-    elif size_bytes < 1024 * 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
-    else:
-        return f"{size_bytes / (1024 * 1024 * 1024 * 1024):.2f} TB"
-
+# === BLOCK: progress.utils ===
+# Description: 문자열 정규화 및 유사도 계산 헬퍼 함수
+# Dependencies: None
+# AI Context: 매칭 로직 디버깅 시 이 블록만 읽으면 됨
 
 def normalize_name(name: str) -> str:
     """파일명/비디오제목 정규화"""
@@ -76,6 +68,8 @@ def calculate_similarity(name1: str, name2: str) -> float:
     intersection = kw1 & kw2
     return len(intersection) / min(len(kw1), len(kw2))
 
+# === END BLOCK: progress.utils ===
+
 
 # ==================== Main Service ====================
 
@@ -96,6 +90,7 @@ class ProgressService:
         depth: int = 2,
         include_files: bool = False,
         extensions: Optional[List[str]] = None,
+        include_codecs: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         폴더 트리와 진행률 정보를 함께 반환
@@ -106,6 +101,7 @@ class ProgressService:
             depth: 탐색 깊이
             include_files: 파일 목록 포함 여부
             extensions: 확장자 필터 목록 (예: ['.mp4', '.mkv'])
+            include_codecs: 코덱 정보 포함 여부
         """
         # Step 1: Work Status 전체 로드 (archive db)
         work_statuses = await self._load_work_statuses(db)
@@ -127,11 +123,16 @@ class ProgressService:
         tree = []
         for folder in folders:
             folder_data = await self._build_folder_progress(
-                db, folder, work_statuses, hand_data, depth, 0, include_files, extensions
+                db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs
             )
             tree.append(folder_data)
 
         return tree
+
+    # === BLOCK: progress.data_loader ===
+    # Description: Work Status 및 Hand Analysis 데이터 로드
+    # Dependencies: WorkStatus, HandAnalysis models
+    # AI Context: 데이터 로딩 문제 디버깅 시
 
     async def _load_work_statuses(self, db: AsyncSession) -> Dict[str, Any]:
         """Work Status (archive db) 로드 - 카테고리 기준"""
@@ -180,6 +181,14 @@ class ProgressService:
             }
 
         return hand_data
+
+    # === END BLOCK: progress.data_loader ===
+
+    # === BLOCK: progress.matcher ===
+    # Description: 폴더명-카테고리 매칭 로직 (핵심!)
+    # Dependencies: WorkStatus data
+    # AI Context: 매칭 버그 수정 시 이 블록만 읽으면 됨
+    # Known Issues: #3 해결됨 (folder_prefix 전략 추가)
 
     def _normalize_folder_name(self, name: str) -> str:
         """폴더명 정규화: 하이픈/밑줄을 공백으로 변환"""
@@ -272,14 +281,22 @@ class ProgressService:
         # 정렬: 우선순위 점수 > progress_percent
         matched.sort(key=lambda x: (x[1], x[0].get('progress_percent', 0)), reverse=True)
 
-        # 상위 매칭만 반환 (같은 점수 그룹)
+        # ⚠️ 핵심 수정: 최고 점수 매칭 하나만 반환 (중복 합산 방지)
+        # 이전: 비슷한 점수(top_score - 0.1) 모두 반환 → excel_done 중복 합산 문제
+        # 현재: 가장 정확한 매칭 하나만 선택
+        # 중기 해결책: folder_work_mapping 테이블로 명시적 매핑 (Issue 생성 필요)
         if not matched:
             return []
 
-        top_score = matched[0][1]
-        result = [m[0] for m in matched if m[1] >= top_score - 0.1]
+        # 최고 점수 매칭만 반환 (1개)
+        return [matched[0][0]]
 
-        return result
+    # === END BLOCK: progress.matcher ===
+
+    # === BLOCK: progress.file_matcher ===
+    # Description: NAS 파일명과 Hand Analysis 매칭
+    # Dependencies: hand_data, normalize_name, calculate_similarity
+    # AI Context: 파일 진행률 표시 문제 시
 
     def _match_file_to_hand(
         self,
@@ -319,6 +336,14 @@ class ProgressService:
 
         return None, {}
 
+    # === END BLOCK: progress.file_matcher ===
+
+    # === BLOCK: progress.aggregator ===
+    # Description: 폴더 트리 구축 및 하이어라키 합산 (가장 복잡!)
+    # Dependencies: progress.matcher, progress.file_matcher, progress.data_loader
+    # AI Context: 진행률 계산/합산 문제, 코덱 집계 문제 시
+    # Warning: 300줄 이상의 대형 함수 - 분할 고려 필요
+
     async def _build_folder_progress(
         self,
         db: AsyncSession,
@@ -329,8 +354,9 @@ class ProgressService:
         current_depth: int,
         include_files: bool,
         extensions: Optional[List[str]] = None,
+        include_codecs: bool = False,
     ) -> Dict[str, Any]:
-        """폴더 데이터 구축 (archive db + metadata db 통합)"""
+        """폴더 데이터 구축 (archive db + metadata db + codecs 통합)"""
 
         # 기본 폴더 정보
         folder_dict = {
@@ -447,6 +473,33 @@ class ProgressService:
             "match_rate": 0.0,  # 매칭 비율
         }
 
+        # === 코덱 정보 조회 (include_codecs=true일 때만) ===
+        video_codecs: Dict[str, int] = {}
+        audio_codecs: Dict[str, int] = {}
+        files_with_codec = 0
+
+        if include_codecs:
+            # 현재 폴더의 직접 파일들의 코덱 정보 조회
+            codec_query = select(
+                FileStats.video_codec,
+                FileStats.audio_codec,
+                func.count(FileStats.id).label("count"),
+            ).where(
+                FileStats.folder_path == folder.path
+            ).group_by(
+                FileStats.video_codec,
+                FileStats.audio_codec,
+            )
+            codec_result = await db.execute(codec_query)
+            codec_rows = codec_result.fetchall()
+
+            for row in codec_rows:
+                if row.video_codec:
+                    video_codecs[row.video_codec] = video_codecs.get(row.video_codec, 0) + row.count
+                    files_with_codec += row.count
+                if row.audio_codec:
+                    audio_codecs[row.audio_codec] = audio_codecs.get(row.audio_codec, 0) + row.count
+
         # === 자식 폴더 (재귀) ===
         children = []
         # work_summary 합산용 변수 (file_count 기준)
@@ -466,7 +519,7 @@ class ProgressService:
             for child in child_folders:
                 child_data = await self._build_folder_progress(
                     db, child, work_statuses, hand_data,
-                    max_depth, current_depth + 1, include_files, extensions
+                    max_depth, current_depth + 1, include_files, extensions, include_codecs
                 )
                 children.append(child_data)
 
@@ -491,33 +544,46 @@ class ProgressService:
                     child_avg = child_ha.get("avg_progress", 0)
                     progress_sum += child_avg * child_matched
 
+                # 자식 폴더의 codec_summary 합산 (include_codecs=true일 때만)
+                if include_codecs and child_data.get("codec_summary"):
+                    child_codec = child_data["codec_summary"]
+                    for codec, count in (child_codec.get("video_codecs") or {}).items():
+                        video_codecs[codec] = video_codecs.get(codec, 0) + count
+                    for codec, count in (child_codec.get("audio_codecs") or {}).items():
+                        audio_codecs[codec] = audio_codecs.get(codec, 0) + count
+                    files_with_codec += child_codec.get("files_with_codec", 0)
+
         folder_dict["children"] = children
 
-        # work_summary에 자식 폴더 합산 (file_count 기준)
+        # work_summary 합산 로직 (중복 방지)
+        # 핵심: 직접 매칭이 있는 폴더는 자식 합산을 하지 않음 (이중 카운트 방지)
+        # 직접 매칭이 없는 폴더만 자식 합산으로 work_summary 생성
         if folder_dict["work_summary"]:
+            # 직접 매칭이 있는 경우: 자식 합산하지 않음 (work_status는 해당 폴더에만 적용)
+            # total_files만 NAS 실제 파일 수로 설정 (folder.file_count 사용)
             ws = folder_dict["work_summary"]
-            ws["total_files"] += child_total_files
-            ws["total_done"] += child_total_done
-            ws["task_count"] += child_task_count
-            ws["sheets_total_videos"] += child_sheets_total
-            ws["sheets_excel_done"] = ws["total_done"]  # 동기화
-            # combined_progress 재계산 (file_count 기준)
+            ws["total_files"] = folder.file_count  # NAS 전체 파일 수 (하위 포함)
+
+            # combined_progress 재계산 (NAS file_count 기준)
             if ws["total_files"] > 0:
-                combined_progress = ws["total_done"] / ws["total_files"] * 100
+                # total_done은 직접 매칭된 work_status의 excel_done 합계 (자식 미포함)
+                combined_progress = min(ws["total_done"] / ws["total_files"] * 100, 100.0)
                 # 90% 이상은 100%로 처리
                 if combined_progress >= 90:
                     combined_progress = 100.0
                 ws["combined_progress"] = round(combined_progress, 1)
 
-            # actual_progress 재계산 (시트 기준)
+            # actual_progress 계산 (시트 기준 - 더 정확한 진행률)
             if ws["sheets_total_videos"] > 0:
                 actual_progress = ws["total_done"] / ws["sheets_total_videos"] * 100
                 if actual_progress >= 90:
                     actual_progress = 100.0
                 ws["actual_progress"] = round(actual_progress, 1)
+            else:
+                ws["actual_progress"] = 0.0
 
             # 데이터 불일치 감지
-            ws["data_source_mismatch"] = abs(ws["total_files"] - ws["sheets_total_videos"]) > max(ws["total_files"], ws["sheets_total_videos"]) * 0.1
+            ws["data_source_mismatch"] = abs(ws["total_files"] - ws["sheets_total_videos"]) > max(ws["total_files"], ws["sheets_total_videos"], 1) * 0.1
             ws["mismatch_count"] = ws["sheets_total_videos"] - ws["total_files"]
         elif child_total_files > 0:
             # 현재 폴더에 매칭이 없지만 자식에 있는 경우 → 자식 합산으로 work_summary 생성
@@ -570,13 +636,43 @@ class ProgressService:
         # if ha["files_matched"] == 0 and ha["total_files"] == 0:
         #     folder_dict["hand_analysis"] = None
 
+        # === 코덱 요약 생성 (include_codecs=true일 때만) ===
+        if include_codecs:
+            if video_codecs or audio_codecs:
+                top_video = max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
+                top_audio = max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
+                folder_dict["codec_summary"] = {
+                    "total_files": folder.file_count,
+                    "files_with_codec": files_with_codec,
+                    "video_codecs": video_codecs,
+                    "audio_codecs": audio_codecs,
+                    "top_video_codec": top_video,
+                    "top_audio_codec": top_audio,
+                }
+            else:
+                folder_dict["codec_summary"] = None
+        else:
+            folder_dict["codec_summary"] = None
+
         # === 파일 목록 ===
         if include_files:
+            # 파일에 코덱 정보 추가 (include_codecs=true일 때)
+            if include_codecs:
+                for f in files_progress:
+                    # 파일의 코덱 정보는 이미 _get_files_with_matching에서 가져옴
+                    pass  # video_codec, audio_codec은 별도로 조회 필요
             folder_dict["files"] = files_progress
         else:
             folder_dict["files"] = None
 
         return folder_dict
+
+    # === END BLOCK: progress.aggregator ===
+
+    # === BLOCK: progress.file_query ===
+    # Description: 폴더 내 파일 목록 조회 및 매칭
+    # Dependencies: progress.file_matcher
+    # AI Context: 파일 목록 표시 문제 시
 
     async def _get_files_with_matching(
         self,
@@ -610,6 +706,9 @@ class ProgressService:
                 "duration": file.duration or 0,
                 "duration_formatted": format_duration(file.duration or 0),
                 "extension": file.extension,
+                # 코덱 정보 (Codec Explorer용)
+                "video_codec": file.video_codec,
+                "audio_codec": file.audio_codec,
                 "matched_title": matched_title,
                 "hand_count": hand_info.get('hand_count', 0),
                 "max_timecode_sec": hand_info.get('max_timecode_sec', 0),
@@ -640,6 +739,13 @@ class ProgressService:
             result.append(file_dict)
 
         return result
+
+    # === END BLOCK: progress.file_query ===
+
+    # === BLOCK: progress.folder_detail ===
+    # Description: 특정 폴더 상세 정보 조회 (폴더 클릭 시)
+    # Dependencies: progress.matcher, progress.file_query
+    # AI Context: 상세 패널 표시 문제 시
 
     async def get_folder_detail(
         self,
@@ -734,9 +840,65 @@ class ProgressService:
             folder_dict["files"] = None
             folder_dict["hand_analysis"] = None
 
-        folder_dict["children"] = []
+        # === 자식 폴더 조회 ===
+        child_result = await db.execute(
+            select(FolderStats)
+            .where(FolderStats.parent_path == folder_path)
+            .order_by(FolderStats.total_size.desc())
+        )
+        child_folders = child_result.scalars().all()
+
+        children = []
+        for child in child_folders:
+            # 자식 폴더 기본 정보 (재귀 호출 없이 1단계만)
+            child_work_statuses = self._match_work_statuses(child.name, child.path, work_statuses)
+
+            child_summary = None
+            if child_work_statuses:
+                child_total_done = sum(ws.get("excel_done", 0) for ws in child_work_statuses)
+                child_sheets_total = sum(ws.get("total_videos", 0) for ws in child_work_statuses)
+                child_progress = (child_total_done / child.file_count * 100) if child.file_count > 0 else 0
+                if child_progress >= 90:
+                    child_progress = 100.0
+
+                child_summary = {
+                    "task_count": len(child_work_statuses),
+                    "total_files": child.file_count,
+                    "total_done": child_total_done,
+                    "combined_progress": round(child_progress, 1),
+                    "sheets_total_videos": child_sheets_total,
+                    "sheets_excel_done": child_total_done,
+                }
+
+            children.append({
+                "id": child.id,
+                "name": child.name,
+                "path": child.path,
+                "size": child.total_size,
+                "size_formatted": format_size(child.total_size),
+                "file_count": child.file_count,
+                "folder_count": child.folder_count,
+                "duration": child.total_duration,
+                "duration_formatted": format_duration(child.total_duration),
+                "depth": child.depth,
+                "work_summary": child_summary,
+                "work_statuses": child_work_statuses,
+                "work_status": child_work_statuses[0] if child_work_statuses else None,
+                "hand_analysis": None,  # 상세 조회 시만 계산
+                "children": [],  # 손자 폴더는 추가 조회 필요
+                "files": None,
+            })
+
+        folder_dict["children"] = children
 
         return folder_dict
+
+    # === END BLOCK: progress.folder_detail ===
+
+    # === BLOCK: progress.file_detail ===
+    # Description: 특정 파일의 상세 진행률 조회
+    # Dependencies: progress.file_matcher, HandAnalysis model
+    # AI Context: 개별 파일 진행률 표시 문제 시
 
     async def get_file_progress_detail(
         self,
@@ -801,6 +963,8 @@ class ProgressService:
                 "is_complete": progress_percent >= 90,
             }
         }
+
+    # === END BLOCK: progress.file_detail ===
 
 
 # 싱글톤 인스턴스

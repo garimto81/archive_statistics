@@ -175,7 +175,7 @@ function FileNode({ file, level, selectedPath, displayMode, onSelect }: FileNode
   return (
     <div
       className={clsx(
-        'flex items-center py-1 px-2 cursor-pointer rounded transition-colors',
+        'flex items-center py-1.5 px-2 cursor-pointer rounded transition-colors',
         isSelected ? 'bg-purple-50 text-purple-700' : 'hover:bg-gray-50'
       )}
       style={{ paddingLeft: `${level * 16 + 8}px` }}
@@ -190,40 +190,51 @@ function FileNode({ file, level, selectedPath, displayMode, onSelect }: FileNode
       <FileVideo className="w-4 h-4 text-purple-400 mr-2 flex-shrink-0" />
 
       {/* File Name */}
-      <span className="text-xs font-medium truncate flex-1 max-w-[200px]" title={file.name}>
+      <span className="text-xs font-medium truncate max-w-[180px]" title={file.name}>
         {file.name}
       </span>
 
-      {/* Duration */}
-      <span className="text-xs text-gray-400 mx-2 flex-shrink-0">
-        {file.duration_formatted}
-      </span>
+      {/* Issue #29: 파일 메타데이터 (용량 · 코덱 · 재생시간) - 항상 표시 */}
+      <div className="flex items-center gap-2 ml-2 flex-shrink-0 text-xs">
+        {/* 용량 */}
+        <span className="text-gray-500 font-mono" title="파일 용량">
+          {file.size_formatted}
+        </span>
 
-      {/* Codec Mode: Show codec info */}
-      {isCodecMode && (
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {file.video_codec && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+        {/* 구분자 */}
+        <span className="text-gray-300">·</span>
+
+        {/* 코덱 (비디오/오디오) */}
+        <div className="flex items-center gap-1">
+          {file.video_codec ? (
+            <span className="inline-flex items-center px-1 py-0.5 rounded bg-blue-50 text-blue-600" title="비디오 코덱">
               <Film className="w-3 h-3 mr-0.5" />
               {file.video_codec}
             </span>
+          ) : (
+            <span className="text-gray-300" title="비디오 코덱 없음">-</span>
           )}
           {file.audio_codec && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700">
+            <span className="inline-flex items-center px-1 py-0.5 rounded bg-green-50 text-green-600" title="오디오 코덱">
               <Music className="w-3 h-3 mr-0.5" />
               {file.audio_codec}
             </span>
           )}
-          {!file.video_codec && !file.audio_codec && (
-            <span className="text-xs text-gray-300">-</span>
-          )}
         </div>
-      )}
+
+        {/* 구분자 */}
+        <span className="text-gray-300">·</span>
+
+        {/* 재생 시간 */}
+        <span className="text-gray-500 font-mono" title="재생 시간">
+          {file.duration_formatted}
+        </span>
+      </div>
 
       {/* Progress Mode: Show progress bar */}
       {!isCodecMode && hasProgress && file.metadata_progress && (
         <>
-          <div className="flex-1 max-w-[150px]">
+          <div className="flex-1 max-w-[120px] ml-2">
             <ProgressBar
               metadataProgress={file.metadata_progress.progress_percent}
               isComplete={file.metadata_progress.is_complete}
@@ -234,7 +245,7 @@ function FileNode({ file, level, selectedPath, displayMode, onSelect }: FileNode
           </div>
           <span
             className={clsx(
-              'text-xs ml-2 flex-shrink-0',
+              'text-xs ml-1 flex-shrink-0',
               file.metadata_progress.is_complete ? 'text-green-600' : 'text-gray-500'
             )}
           >

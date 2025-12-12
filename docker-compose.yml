@@ -25,7 +25,7 @@ services:
       - WORK_STATUS_SHEET_URL=https://docs.google.com/spreadsheets/d/1xuN4_1mQME_SVwnI7445JuLd8K7tRS9HDNYYJi2fm2k
     volumes:
       - ./data:/app/data
-      - nas_archive:/mnt/nas:ro
+      # - nas_archive:/mnt/nas:ro  # TEMP: disabled due to WSL2 mount issue
       - ./service_account_key.json:/app/credentials/service_account_key.json:ro
     restart: unless-stopped
     networks:

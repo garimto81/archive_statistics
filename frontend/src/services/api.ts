@@ -27,6 +27,7 @@ import type {
   AutoMatchResult,
   BulkConnectResult,
   CodecTreeNode,
+  TreeWithRootStats,
 } from '../types';
 
 const api = axios.create({
@@ -325,6 +326,10 @@ export const dataSourcesApi = {
 
 // Progress API - 간트차트용 폴더 트리 + 진행률
 export const progressApi = {
+  /**
+   * 폴더 트리 + 진행률 조회 (Issue #29: root_stats 포함)
+   * @returns TreeWithRootStats { tree, root_stats }
+   */
   getTreeWithProgress: async (
     path?: string,
     depth = 2,
@@ -340,7 +345,31 @@ export const progressApi = {
     if (extensions && extensions.length > 0) {
       params.append('extensions', extensions.join(','));
     }
-    const { data } = await api.get(`/progress/tree?${params}`);
+    const { data } = await api.get<TreeWithRootStats>(`/progress/tree?${params}`);
+    // 하위 호환성: tree 배열만 반환 (기존 코드 호환)
+    return data.tree;
+  },
+
+  /**
+   * 폴더 트리 + 루트 통계 조회 (Issue #29)
+   * @returns TreeWithRootStats { tree, root_stats }
+   */
+  getTreeWithRootStats: async (
+    path?: string,
+    depth = 2,
+    includeFiles = false,
+    extensions?: string[],
+    includeCodecs = false
+  ): Promise<TreeWithRootStats> => {
+    const params = new URLSearchParams();
+    if (path) params.append('path', path);
+    params.append('depth', depth.toString());
+    params.append('include_files', includeFiles.toString());
+    params.append('include_codecs', includeCodecs.toString());
+    if (extensions && extensions.length > 0) {
+      params.append('extensions', extensions.join(','));
+    }
+    const { data } = await api.get<TreeWithRootStats>(`/progress/tree?${params}`);
     return data;
   },
 

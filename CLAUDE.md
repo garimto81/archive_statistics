@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Version**: 1.31.0 | **Last Updated**: 2025-12-12
+**Version**: 1.32.0 | **Last Updated**: 2025-12-12
 
 ## Project Overview
 
@@ -42,9 +42,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |----------|-------------|
 | `GET /api/progress/tree` | 진행률 포함 폴더 트리 ⭐ |
 | `GET /api/stats` | 전체 통계 |
-| `GET /api/work-status` | 작업 현황 |
+| `GET /api/archiving-status` | 아카이빙 작업 현황 ⭐ |
 | `POST /api/scan` | NAS 스캔 |
 | `GET /api/sync/status` | Sheets 동기화 상태 |
+
+> Note: `/api/work-status`는 deprecated. `/api/archiving-status` 사용 권장 (#37)
 
 ---
 
@@ -103,6 +105,7 @@ GOOGLE_SHEETS_ID=1abc...
 
 | 버전 | 날짜 | 변경 |
 |------|------|------|
+| 1.32.0 | 2025-12-12 | Work Status → Archiving Status 이름 변경 (#37) |
 | 1.31.0 | 2025-12-12 | Hand Analysis → Archive Metadata 이름 변경 (#36) |
 | 1.30.0 | 2025-12-12 | MasterFolderTree 통합 컴포넌트 (#34), 레거시 정리 |
 | 1.29.0 | 2025-12-12 | 숨긴 항목 필터 기능 (is_hidden, include_hidden API) |

@@ -97,6 +97,8 @@ class FileWithProgress(BaseModel):
     # 코덱 정보
     video_codec: Optional[str] = None
     audio_codec: Optional[str] = None
+    # 숨김 파일 여부
+    is_hidden: bool = False
 
 
 class FolderRootStats(BaseModel):
@@ -173,6 +175,7 @@ async def get_folder_tree_with_progress(
     depth: int = Query(2, ge=1, le=10, description="탐색 깊이 (1-10)"),
     include_files: bool = Query(False, description="파일 목록 포함"),
     include_codecs: bool = Query(False, description="코덱 정보 포함 (Codec Explorer용)"),
+    include_hidden: bool = Query(False, description="숨김 파일 포함 (기본: 제외)"),
     extensions: Optional[str] = Query(None, description="쉼표로 구분된 확장자 필터 (예: mp4,mkv)"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -183,6 +186,7 @@ async def get_folder_tree_with_progress(
     - 각 폴더에 Hand Analysis (metadata db) 집계
     - include_files=true 시 파일별 진행률 포함
     - include_codecs=true 시 폴더/파일별 코덱 정보 포함
+    - include_hidden=true 시 숨김 파일 포함 (기본: 제외)
     - extensions 필터로 특정 확장자만 포함
     - Issue #29: root_stats로 전체 통계 반환 (NAS/Sheets 데이터 분리 표시용)
 
@@ -195,7 +199,7 @@ async def get_folder_tree_with_progress(
         ext_list = [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",")]
 
     result = await progress_service.get_folder_with_progress(
-        db, path, depth, include_files, ext_list, include_codecs
+        db, path, depth, include_files, ext_list, include_codecs, include_hidden
     )
     return result
 

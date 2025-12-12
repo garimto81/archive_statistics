@@ -301,6 +301,11 @@ class ArchiveScanner:
                         hours = self.state["total_duration_found"] / 3600
                         self._add_log(f"📹 {self.state['media_files_processed']} media files, {hours:.1f}h total")
 
+            # 숨김 파일 판별 (파일명이 .으로 시작하거나 시스템 파일)
+            is_hidden = entry.name.startswith('.') or entry.name.lower() in (
+                'thumbs.db', 'desktop.ini', '.ds_store', '.gitignore', '.gitkeep'
+            )
+
             file_info = {
                 "path": entry.path,
                 "name": entry.name,
@@ -313,6 +318,7 @@ class ArchiveScanner:
                 "duration": duration,
                 "video_codec": video_codec,
                 "audio_codec": audio_codec,
+                "is_hidden": is_hidden,
             }
 
             if existing:

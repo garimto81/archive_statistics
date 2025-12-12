@@ -29,6 +29,7 @@ export default function Dashboard() {
   const [selectedFolder, setSelectedFolder] = useState<FolderWithProgress | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileWithProgress | null>(null);
   const [selectedExtensions, setSelectedExtensions] = useState<Set<string>>(new Set());
+  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
 
   // Convert Set to array for API calls
   const extensionsArray = useMemo(
@@ -73,6 +74,8 @@ export default function Dashboard() {
       <ExtensionFilter
         selectedExtensions={selectedExtensions}
         onChange={setSelectedExtensions}
+        showHiddenFiles={showHiddenFiles}
+        onShowHiddenChange={setShowHiddenFiles}
       />
 
       {/* Stats Cards */}
@@ -116,6 +119,7 @@ export default function Dashboard() {
             showFiles={true}
             enableLazyLoading={true}
             selectedExtensions={extensionsArray}
+            showHiddenFiles={showHiddenFiles}
             onFolderSelect={handleFolderSelect}
             onFileSelect={handleFileSelect}
           />

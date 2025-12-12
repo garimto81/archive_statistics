@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Version**: 1.33.0 | **Last Updated**: 2025-12-12
+**Version**: 1.34.0 | **Last Updated**: 2025-12-12
 
 ## Project Overview
 
@@ -88,6 +88,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `progress.utils` | 25-55 | 정규화/유사도 헬퍼 |
 | `progress.matcher` | 162-285 | 폴더-카테고리 매칭 |
 | `progress.aggregator` | 325-642 | 하이어라키 합산 |
+| `progress.validator` | 478-559 | 매칭 검증/진행률 계산 (PRD-0041) |
 
 ---
 
@@ -131,6 +132,7 @@ Backend (FastAPI + SQLAlchemy + aiosqlite)
 
 | 버전 | 날짜 | 변경 |
 |------|------|------|
+| 1.34.0 | 2025-12-12 | PRD-0041 완료: is_complete/mismatch UI 표시 (#42, PR #43/#44) |
 | 1.33.0 | 2025-12-12 | progress.validator 블록 추가 (PRD-0041 Phase 1, #42) |
 | 1.32.0 | 2025-12-12 | WorkStatus 기본 탭 Workers로 변경 (#40) |
 | 1.31.0 | 2025-12-12 | CLAUDE.md 개선: Quick Reference 확장, Block Agent System 추가 |

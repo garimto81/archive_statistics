@@ -1,9 +1,11 @@
 # PRD-0041: Archiving Progress Matching 개선
 
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Created**: 2025-12-12
-**Issue**: TBD
-**Status**: Draft
+**Updated**: 2025-12-12
+**Issue**: #42
+**Status**: Completed
+**PR**: #43, #44
 
 ---
 
@@ -427,36 +429,30 @@ Response 확장:
 
 ## 8. Implementation Plan
 
-### Phase 1: Backend 개선
+### Phase 1: Backend 개선 ✅ (PR #43)
 
-| Task | 파일 | 설명 |
-|------|------|------|
-| 1.1 | progress_service.py | `progress.validator` 블록 추가 |
-| 1.2 | progress_service.py | `_build_folder_progress` 개선 |
-| 1.3 | schemas/progress.py | `is_complete`, `matching_score` 필드 추가 |
+| Task | 파일 | 설명 | Status |
+|------|------|------|--------|
+| 1.1 | progress_service.py | `progress.validator` 블록 추가 | ✅ |
+| 1.2 | progress_service.py | `_build_folder_progress` 개선 | ✅ |
+| 1.3 | api/progress.py | `is_complete`, `matching_score` 필드 추가 | ✅ |
+| 1.4 | types/index.ts | `WorkSummary` 타입 확장 | ✅ |
 
-### Phase 2: API 확장
+### Phase 2: Frontend UI 개선 ✅ (PR #44)
 
-| Task | 파일 | 설명 |
-|------|------|------|
-| 2.1 | api/progress.py | 응답 스키마 확장 |
-| 2.2 | api/folder_mapping.py | 검증 API 추가 (선택) |
+| Task | 파일 | 설명 | Status |
+|------|------|------|--------|
+| 2.1 | MasterFolderTree/index.tsx | Work Badge 개선 (`is_complete` ✓, `mismatch` ⚠) | ✅ |
+| 2.2 | MasterFolderDetail/index.tsx | ProgressSection 개선 (매칭 정보, 경고) | ✅ |
 
-### Phase 3: Frontend 개선
+### Phase 3: 테스트 및 문서화 ✅
 
-| Task | 파일 | 설명 |
-|------|------|------|
-| 3.1 | MasterFolderTree/index.tsx | 진행률 표시 개선 |
-| 3.2 | MasterFolderDetail/index.tsx | 매칭 정보 표시 |
-| 3.3 | types/index.ts | 타입 확장 |
-
-### Phase 4: 테스트 및 문서화
-
-| Task | 설명 |
-|------|------|
-| 4.1 | Unit 테스트 작성 |
-| 4.2 | E2E 테스트 |
-| 4.3 | CLAUDE.md 업데이트 |
+| Task | 설명 | Status |
+|------|------|--------|
+| 3.1 | Unit 테스트 (validate_match) | ✅ |
+| 3.2 | TypeScript 컴파일 검증 | ✅ |
+| 3.3 | PRD-0041 문서 업데이트 | ✅ |
+| 3.4 | CLAUDE.md 버전 업데이트 | ✅ |
 
 ---
 

@@ -10,13 +10,17 @@
  */
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Filter, X, Check } from 'lucide-react';
+import { Filter, X, Check, Eye, EyeOff } from 'lucide-react';
 import clsx from 'clsx';
 import { statsApi } from '../services/api';
 
 interface ExtensionFilterProps {
   selectedExtensions: Set<string>;
   onChange: (selected: Set<string>) => void;
+  /** 숨김 파일 표시 여부 */
+  showHiddenFiles?: boolean;
+  /** 숨김 파일 토글 변경 콜백 */
+  onShowHiddenChange?: (show: boolean) => void;
   className?: string;
 }
 
@@ -31,6 +35,8 @@ const EXTENSION_GROUPS = {
 export default function ExtensionFilter({
   selectedExtensions,
   onChange,
+  showHiddenFiles = false,
+  onShowHiddenChange,
   className,
 }: ExtensionFilterProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -90,15 +96,43 @@ export default function ExtensionFilter({
             </span>
           )}
         </div>
-        {selectedExtensions.size > 0 && (
-          <button
-            onClick={clearSelection}
-            className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
-          >
-            <X className="w-3 h-3" />
-            Clear
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {/* 숨김 파일 토글 */}
+          {onShowHiddenChange && (
+            <label
+              className="flex items-center gap-1.5 text-xs cursor-pointer select-none"
+              title={showHiddenFiles ? '숨김 파일 숨기기' : '숨김 파일 표시'}
+            >
+              <button
+                type="button"
+                onClick={() => onShowHiddenChange(!showHiddenFiles)}
+                className={clsx(
+                  'flex items-center gap-1 px-2 py-1 rounded-full transition-colors',
+                  showHiddenFiles
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                )}
+              >
+                {showHiddenFiles ? (
+                  <Eye className="w-3.5 h-3.5" />
+                ) : (
+                  <EyeOff className="w-3.5 h-3.5" />
+                )}
+                <span>숨김 파일</span>
+              </button>
+            </label>
+          )}
+
+          {selectedExtensions.size > 0 && (
+            <button
+              onClick={clearSelection}
+              className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+            >
+              <X className="w-3 h-3" />
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Quick Group Buttons */}

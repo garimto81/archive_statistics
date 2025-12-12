@@ -91,6 +91,7 @@ class ProgressService:
         include_files: bool = False,
         extensions: Optional[List[str]] = None,
         include_codecs: bool = False,
+        include_hidden: bool = False,
     ) -> Dict[str, Any]:
         """
         폴더 트리와 진행률 정보를 함께 반환
@@ -102,6 +103,7 @@ class ProgressService:
             include_files: 파일 목록 포함 여부
             extensions: 확장자 필터 목록 (예: ['.mp4', '.mkv'])
             include_codecs: 코덱 정보 포함 여부
+            include_hidden: 숨김 파일 포함 여부 (기본: False)
 
         Returns:
             Dict with 'tree' (폴더 목록) and 'root_stats' (전체 통계)
@@ -115,7 +117,8 @@ class ProgressService:
         logger.info(f"Loaded {len(hand_data)} unique file titles from metadata db")
 
         # Step 3: 루트 전체 통계 계산 (Issue #29: NAS/Sheets 데이터 분리 표시용)
-        root_stats = await self._calculate_root_stats(db, path, extensions)
+        # Issue #32: include_hidden 파라미터 추가
+        root_stats = await self._calculate_root_stats(db, path, extensions, include_hidden)
         logger.info(f"Root stats: {root_stats}")
 
         # Step 4: 폴더 트리 구축
@@ -147,6 +150,7 @@ class ProgressService:
                 db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs,
                 parent_work_status_ids=root_sibling_used_ids.copy(),  # 조상+이전형제 ID 전달
                 root_stats=root_stats,  # 루트 통계 전달
+                include_hidden=include_hidden,  # 숨김 파일 포함 여부
             )
             tree.append(folder_data)
             # 이 폴더와 하위에서 사용된 ID를 다음 형제에게 전파
@@ -167,15 +171,20 @@ class ProgressService:
         db: AsyncSession,
         path: Optional[str] = None,
         extensions: Optional[List[str]] = None,
+        include_hidden: bool = False,
     ) -> Dict[str, Any]:
         """루트(또는 기준 경로) 전체 통계 계산
 
         Issue #29: NAS 데이터와 Sheets 데이터 분리 표시를 위해
         전체 파일 수/용량을 계산하여 각 폴더가 비율로 표시할 수 있게 함.
 
+        Issue #32: 필터 적용 시 동적 통계 계산
+        - extensions 또는 include_hidden 필터가 적용되면 FileStats에서 직접 계산
+
         Args:
             path: 기준 경로 (None이면 전체 ARCHIVE)
             extensions: 확장자 필터
+            include_hidden: 숨김 파일 포함 여부
 
         Returns:
             {
@@ -188,33 +197,11 @@ class ProgressService:
                 "sheets_total_done": Sheets 전체 excel_done 합계,
             }
         """
-        # NAS 전체 통계 (depth=0 폴더들의 합계)
-        if path:
-            # 특정 경로 하위의 통계
-            folder_query = select(FolderStats).where(FolderStats.path == path)
-            folder_result = await db.execute(folder_query)
-            root_folder = folder_result.scalar_one_or_none()
-
-            if root_folder:
-                total_files = root_folder.file_count
-                total_size = root_folder.total_size
-                total_duration = root_folder.total_duration or 0
-            else:
-                total_files = 0
-                total_size = 0
-                total_duration = 0
-        else:
-            # 전체 ARCHIVE 통계 (depth=0 폴더들의 합계)
-            stats_query = select(
-                func.sum(FolderStats.file_count),
-                func.sum(FolderStats.total_size),
-                func.sum(FolderStats.total_duration),
-            ).where(FolderStats.depth == 0)
-            stats_result = await db.execute(stats_query)
-            row = stats_result.fetchone()
-            total_files = row[0] or 0
-            total_size = row[1] or 0
-            total_duration = row[2] or 0
+        # Issue #32: 항상 FileStats에서 직접 계산 (FolderStats는 stale할 수 있음)
+        # 이렇게 하면 include_hidden 필터가 정확하게 동작함
+        total_files, total_size, total_duration = await self._calculate_filtered_stats(
+            db, path, extensions, include_hidden
+        )
 
         # Sheets 전체 통계
         sheets_query = select(
@@ -235,6 +222,92 @@ class ProgressService:
             "sheets_total_videos": sheets_total_videos,
             "sheets_total_done": sheets_total_done,
         }
+
+    async def _calculate_filtered_stats(
+        self,
+        db: AsyncSession,
+        path: Optional[str] = None,
+        extensions: Optional[List[str]] = None,
+        include_hidden: bool = False,
+    ) -> Tuple[int, int, int]:
+        """Issue #32: 필터 적용된 통계 계산 (FileStats에서 직접 집계)
+
+        Args:
+            path: 기준 경로 (None이면 전체)
+            extensions: 확장자 필터 (예: ['mp4', 'mkv'])
+            include_hidden: 숨김 파일 포함 여부
+
+        Returns:
+            (total_files, total_size, total_duration) 튜플
+        """
+        # 기본 쿼리
+        query = select(
+            func.count(FileStats.id),
+            func.sum(FileStats.size),
+            func.sum(FileStats.duration),
+        )
+
+        # 경로 필터
+        if path:
+            query = query.where(FileStats.path.like(f"{path}%"))
+
+        # 확장자 필터
+        if extensions:
+            query = query.where(FileStats.extension.in_(extensions))
+
+        # 숨김 파일 필터
+        if not include_hidden:
+            query = query.where(FileStats.is_hidden == False)
+
+        result = await db.execute(query)
+        row = result.fetchone()
+
+        total_files = row[0] or 0
+        total_size = row[1] or 0
+        total_duration = row[2] or 0
+
+        return total_files, total_size, total_duration
+
+    async def _calculate_filtered_folder_stats(
+        self,
+        db: AsyncSession,
+        folder_path: str,
+        extensions: Optional[List[str]] = None,
+        include_hidden: bool = False,
+    ) -> Tuple[int, int, int]:
+        """Issue #32: 특정 폴더의 필터 적용된 통계 계산
+
+        Args:
+            folder_path: 폴더 경로
+            extensions: 확장자 필터
+            include_hidden: 숨김 파일 포함 여부
+
+        Returns:
+            (file_count, total_size, total_duration) 튜플
+        """
+        # 해당 폴더 및 하위 폴더의 파일 집계
+        query = select(
+            func.count(FileStats.id),
+            func.sum(FileStats.size),
+            func.sum(FileStats.duration),
+        ).where(FileStats.path.like(f"{folder_path}%"))
+
+        # 확장자 필터
+        if extensions:
+            query = query.where(FileStats.extension.in_(extensions))
+
+        # 숨김 파일 필터
+        if not include_hidden:
+            query = query.where(FileStats.is_hidden == False)
+
+        result = await db.execute(query)
+        row = result.fetchone()
+
+        file_count = row[0] or 0
+        total_size = row[1] or 0
+        total_duration = row[2] or 0
+
+        return file_count, total_size, total_duration
 
     # === END BLOCK: progress.root_stats ===
 
@@ -534,6 +607,7 @@ class ProgressService:
         include_codecs: bool = False,
         parent_work_status_ids: Optional[Set[int]] = None,  # 상위 폴더에서 매칭된 work_status ID들
         root_stats: Optional[Dict[str, Any]] = None,  # Issue #29: 루트 전체 통계
+        include_hidden: bool = False,  # 숨김 파일 포함 여부
     ) -> Tuple[Dict[str, Any], Set[int]]:
         """폴더 데이터 구축 (archive db + metadata db + codecs 통합)
 
@@ -548,17 +622,22 @@ class ProgressService:
         if parent_work_status_ids is None:
             parent_work_status_ids = set()
 
+        # Issue #32: 항상 FileStats에서 직접 계산 (FolderStats는 stale할 수 있음)
+        file_count, total_size, total_duration = await self._calculate_filtered_folder_stats(
+            db, folder.path, extensions, include_hidden
+        )
+
         # 기본 폴더 정보
         folder_dict = {
             "id": folder.id,
             "name": folder.name,
             "path": folder.path,
-            "size": folder.total_size,
-            "size_formatted": format_size(folder.total_size),
-            "file_count": folder.file_count,
+            "size": total_size,
+            "size_formatted": format_size(total_size),
+            "file_count": file_count,
             "folder_count": folder.folder_count,
-            "duration": folder.total_duration,
-            "duration_formatted": format_duration(folder.total_duration),
+            "duration": total_duration,
+            "duration_formatted": format_duration(total_duration),
             "depth": folder.depth,
         }
 
@@ -570,9 +649,9 @@ class ProgressService:
                 "total_files": root_total_files,
                 "total_size": root_total_size,
                 "total_size_formatted": root_stats.get("total_size_formatted", "0 B"),
-                # 현재 폴더의 비율 계산
-                "file_ratio": round(folder.file_count / root_total_files * 100, 1) if root_total_files > 0 else 0,
-                "size_ratio": round(folder.total_size / root_total_size * 100, 1) if root_total_size > 0 else 0,
+                # 현재 폴더의 비율 계산 (필터 적용된 값 사용)
+                "file_ratio": round(file_count / root_total_files * 100, 1) if root_total_files > 0 else 0,
+                "size_ratio": round(total_size / root_total_size * 100, 1) if root_total_size > 0 else 0,
             }
         else:
             folder_dict["root_stats"] = None
@@ -634,17 +713,18 @@ class ProgressService:
 
             # ⚠️ 검증: total_done > total_files 이면 잘못된 매칭 (무효화)
             # 예: 파일 1개 폴더가 done=27인 작업에 매칭된 경우
-            if total_done > folder.file_count:
+            # Issue #32: 필터 적용된 file_count 사용
+            if total_done > file_count:
                 logger.warning(
-                    f"[MISMATCH] {folder.name}: total_done({total_done}) > file_count({folder.file_count}) - 매칭 무효화"
+                    f"[MISMATCH] {folder.name}: total_done({total_done}) > file_count({file_count}) - 매칭 무효화"
                 )
                 work_statuses_matched = []
                 folder_dict["work_statuses"] = []
                 folder_dict["matching_method"] = "invalidated"
                 folder_dict["work_summary"] = None  # 무효화된 매칭은 work_summary 없음
             else:
-                # file_count 기준 진행률 계산 (NAS 실제 파일 수)
-                combined_progress = (total_done / folder.file_count * 100) if folder.file_count > 0 else 0
+                # file_count 기준 진행률 계산 (NAS 실제 파일 수, 필터 적용)
+                combined_progress = (total_done / file_count * 100) if file_count > 0 else 0
 
                 # 90% 이상은 100%로 처리
                 if combined_progress >= 90:
@@ -655,12 +735,12 @@ class ProgressService:
                 if actual_progress >= 90:
                     actual_progress = 100.0
 
-                # 데이터 출처 불일치 감지
-                data_mismatch = abs(folder.file_count - sheets_total) > max(folder.file_count, sheets_total) * 0.1  # 10% 이상 차이
+                # 데이터 출처 불일치 감지 (필터 적용된 file_count 사용)
+                data_mismatch = abs(file_count - sheets_total) > max(file_count, sheets_total) * 0.1  # 10% 이상 차이
 
                 folder_dict["work_summary"] = {
                     "task_count": len(work_statuses_matched),
-                    "total_files": folder.file_count,  # NAS 스캔 결과
+                    "total_files": file_count,  # NAS 스캔 결과 (필터 적용)
                     "total_done": total_done,  # 구글 시트 excel_done 합계
                     "combined_progress": round(combined_progress, 1),  # NAS 기준 (참고용)
                     # 구글 시트 원본 값
@@ -669,7 +749,7 @@ class ProgressService:
                     "actual_progress": round(actual_progress, 1),  # 시트 기준 (실제 진행률)
                     # 데이터 불일치 정보
                     "data_source_mismatch": data_mismatch,
-                    "mismatch_count": sheets_total - folder.file_count,  # 양수: 시트가 더 많음, 음수: NAS가 더 많음
+                    "mismatch_count": sheets_total - file_count,  # 양수: 시트가 더 많음, 음수: NAS가 더 많음
                 }
         else:
             folder_dict["work_summary"] = None
@@ -681,7 +761,7 @@ class ProgressService:
         folder_dict["work_status"] = work_statuses_matched[0] if work_statuses_matched else None
 
         # === metadata db: 파일 기반 Hand Analysis 집계 ===
-        files_progress = await self._get_files_with_matching(db, folder.path, hand_data, extensions)
+        files_progress = await self._get_files_with_matching(db, folder.path, hand_data, extensions, include_hidden)
 
         # 현재 폴더의 직접 파일 통계
         direct_files_count = len(files_progress)
@@ -693,9 +773,9 @@ class ProgressService:
         progress_sum = sum(progress_values)  # 가중 평균 계산용
 
         # hand_analysis 초기화 (자식 합산을 위해 항상 생성)
-        # total_files: 폴더의 전체 파일 수 (FolderStats.file_count 사용)
+        # Issue #32: 필터 적용된 file_count 사용
         folder_dict["hand_analysis"] = {
-            "total_files": folder.file_count,  # 폴더의 전체 파일 수 (하위 포함)
+            "total_files": file_count,  # 폴더의 전체 파일 수 (필터 적용)
             "files_matched": files_with_hands,
             "hand_count": total_hands,
             "max_timecode_sec": max((f.get('max_timecode_sec', 0) for f in files_progress), default=0),
@@ -764,6 +844,7 @@ class ProgressService:
                     max_depth, current_depth + 1, include_files, extensions, include_codecs,
                     parent_work_status_ids=child_parent_ids,  # 상위+형제 매칭 ID 전파
                     root_stats=root_stats,  # Issue #29: 루트 통계 전달
+                    include_hidden=include_hidden,  # 숨김 파일 포함 여부 전파
                 )
                 children.append(child_data)
 
@@ -812,9 +893,9 @@ class ProgressService:
         #   - 자식 폴더들은 각자 자신의 work_summary만 표시
         if folder_dict["work_summary"]:
             # 직접 매칭이 있는 경우만 work_summary 유지
-            # total_files는 NAS 실제 파일 수 (folder.file_count)
+            # Issue #32: 필터 적용된 file_count 사용
             ws = folder_dict["work_summary"]
-            ws["total_files"] = folder.file_count
+            ws["total_files"] = file_count
 
             # combined_progress 재계산 (NAS file_count 기준)
             if ws["total_files"] > 0:
@@ -862,7 +943,7 @@ class ProgressService:
                 top_video = max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
                 top_audio = max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
                 folder_dict["codec_summary"] = {
-                    "total_files": folder.file_count,
+                    "total_files": file_count,  # Issue #32: 필터 적용된 값
                     "files_with_codec": files_with_codec,
                     "video_codecs": video_codecs,
                     "audio_codecs": audio_codecs,
@@ -908,9 +989,14 @@ class ProgressService:
         folder_path: str,
         hand_data: Dict[str, Dict],
         extensions: Optional[List[str]] = None,
+        include_hidden: bool = False,
     ) -> List[Dict[str, Any]]:
         """폴더 내 파일들과 Hand Analysis 매칭"""
         query = select(FileStats).where(FileStats.folder_path == folder_path)
+
+        # 숨김 파일 필터 (기본: 숨김 파일 제외)
+        if not include_hidden:
+            query = query.where(FileStats.is_hidden == False)
 
         # 확장자 필터 적용
         if extensions:
@@ -937,6 +1023,8 @@ class ProgressService:
                 # 코덱 정보 (Codec Explorer용)
                 "video_codec": file.video_codec,
                 "audio_codec": file.audio_codec,
+                # 숨김 파일 여부
+                "is_hidden": file.is_hidden or False,
                 "matched_title": matched_title,
                 "hand_count": hand_info.get('hand_count', 0),
                 "max_timecode_sec": hand_info.get('max_timecode_sec', 0),

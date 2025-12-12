@@ -58,6 +58,8 @@ interface FolderTreeWithProgressProps {
   displayMode?: DisplayMode;
   /** Lazy Loading 활성화 (폴더 클릭 시 자식 동적 로드) */
   enableLazyLoading?: boolean;
+  /** 숨김 파일 표시 여부 (외부에서 제어) */
+  showHiddenFiles?: boolean;
   onFolderSelect?: (folder: FolderWithProgress) => void;
   onFileSelect?: (file: FileWithProgress) => void;
 }
@@ -556,6 +558,7 @@ export default function FolderTreeWithProgress({
   selectedExtensions,
   displayMode = 'progress',
   enableLazyLoading = false,
+  showHiddenFiles = false,
   onFolderSelect,
   onFileSelect,
 }: FolderTreeWithProgressProps) {
@@ -573,13 +576,14 @@ export default function FolderTreeWithProgress({
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['folder-tree-progress', initialPath, initialDepth, showFiles, selectedExtensions, displayMode],
+    queryKey: ['folder-tree-progress', initialPath, initialDepth, showFiles, selectedExtensions, displayMode, showHiddenFiles],
     queryFn: () => progressApi.getTreeWithProgress(
       initialPath,
       initialDepth,
       showFiles,
       selectedExtensions,
-      isCodecMode  // include_codecs
+      isCodecMode,  // include_codecs
+      showHiddenFiles // include_hidden
     ),
     refetchInterval: 60000, // 60초마다 자동 갱신
     staleTime: 30000,
@@ -597,12 +601,13 @@ export default function FolderTreeWithProgress({
         2, // 하위 2단계
         showFiles,
         selectedExtensions,
-        isCodecMode
+        isCodecMode,
+        showHiddenFiles // include_hidden
       );
 
       // 캐시 업데이트
       queryClient.setQueryData(
-        ['folder-tree-progress', initialPath, initialDepth, showFiles, selectedExtensions, displayMode],
+        ['folder-tree-progress', initialPath, initialDepth, showFiles, selectedExtensions, displayMode, showHiddenFiles],
         (old: FolderWithProgress[] | undefined) => {
           if (!old) return old;
           return updateFolderChildren(old, path, children);
@@ -617,7 +622,7 @@ export default function FolderTreeWithProgress({
         return next;
       });
     }
-  }, [enableLazyLoading, loadingPaths, showFiles, selectedExtensions, isCodecMode, queryClient, initialPath, initialDepth, displayMode]);
+  }, [enableLazyLoading, loadingPaths, showFiles, selectedExtensions, isCodecMode, showHiddenFiles, queryClient, initialPath, initialDepth, displayMode]);
 
   const handleFolderSelect = useCallback(
     (folder: FolderWithProgress) => {

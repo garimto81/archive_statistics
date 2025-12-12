@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, BigInteger
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, BigInteger, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -52,6 +52,9 @@ class FileStats(Base):
     # Codec info (extracted via ffprobe)
     video_codec = Column(String, nullable=True)  # e.g., h264, hevc, vp9
     audio_codec = Column(String, nullable=True)  # e.g., aac, mp3, opus
+
+    # Hidden file flag (파일명이 .으로 시작하거나 시스템 파일)
+    is_hidden = Column(Boolean, default=False, index=True)
 
     # Timestamps
     file_created_at = Column(DateTime, nullable=True)

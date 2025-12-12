@@ -335,13 +335,15 @@ export const progressApi = {
     depth = 2,
     includeFiles = false,
     extensions?: string[],
-    includeCodecs = false
+    includeCodecs = false,
+    includeHidden = false
   ): Promise<FolderWithProgress[]> => {
     const params = new URLSearchParams();
     if (path) params.append('path', path);
     params.append('depth', depth.toString());
     params.append('include_files', includeFiles.toString());
     params.append('include_codecs', includeCodecs.toString());
+    params.append('include_hidden', includeHidden.toString());
     if (extensions && extensions.length > 0) {
       params.append('extensions', extensions.join(','));
     }
@@ -359,13 +361,15 @@ export const progressApi = {
     depth = 2,
     includeFiles = false,
     extensions?: string[],
-    includeCodecs = false
+    includeCodecs = false,
+    includeHidden = false
   ): Promise<TreeWithRootStats> => {
     const params = new URLSearchParams();
     if (path) params.append('path', path);
     params.append('depth', depth.toString());
     params.append('include_files', includeFiles.toString());
     params.append('include_codecs', includeCodecs.toString());
+    params.append('include_hidden', includeHidden.toString());
     if (extensions && extensions.length > 0) {
       params.append('extensions', extensions.join(','));
     }

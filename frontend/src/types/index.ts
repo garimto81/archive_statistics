@@ -305,6 +305,8 @@ export interface FileWithProgress {
   // 코덱 정보 (Codec Explorer용)
   video_codec?: string | null;
   audio_codec?: string | null;
+  // 숨김 파일 여부
+  is_hidden?: boolean;
 }
 
 /** 폴더별 코덱 요약 통계 (Codec Explorer용 - FolderWithProgress 내 사용) */

@@ -22,6 +22,8 @@ import FolderTreeWithProgress, {
 } from '../components/FolderTreeWithProgress';
 import DataSourceStatus from '../components/DataSourceStatus';
 import ExtensionFilter from '../components/ExtensionFilter';
+import WorkStatusSummary from '../components/WorkStatusSummary';
+import TopWorkers from '../components/TopWorkers';
 import { statsApi, progressApi } from '../services/api';
 import type { FolderWithProgress, FileWithProgress } from '../types';
 
@@ -166,6 +168,12 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+
+          {/* Work Status Summary - Issue #40 */}
+          <WorkStatusSummary />
+
+          {/* Top Workers - Issue #40 */}
+          <TopWorkers limit={5} compact={true} />
 
           {/* Data Source Status - Compact */}
           <DataSourceStatus />

@@ -19,7 +19,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { workStatusApi, workerStatsApi, syncApi } from '../services/api';
+import { archivingStatusApi, workerStatsApi, syncApi } from '../services/api';
 import type { WorkStatus, WorkerStats } from '../types';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -369,7 +369,7 @@ function WorkerDetailModal({
 export default function WorkStatusPage() {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
-  const [activeTab, setActiveTab] = useState<'tasks' | 'workers'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'workers'>('workers');  // PRD-0040: Workers 탭 기본
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
   const [, setEditingItem] = useState<WorkStatus | null>(null);
   const [, setIsModalOpen] = useState(false);
@@ -377,7 +377,7 @@ export default function WorkStatusPage() {
 
   const { data: workStatusData, isLoading } = useQuery({
     queryKey: ['work-status'],
-    queryFn: () => workStatusApi.getAll(),
+    queryFn: () => archivingStatusApi.getAll(),
   });
 
   const { data: workerStatsData, isLoading: isLoadingWorkers } = useQuery({
@@ -387,11 +387,11 @@ export default function WorkStatusPage() {
 
   useQuery({
     queryKey: ['archives'],
-    queryFn: workStatusApi.getArchives,
+    queryFn: archivingStatusApi.getArchives,
   });
 
   const deleteMutation = useMutation({
-    mutationFn: workStatusApi.delete,
+    mutationFn: archivingStatusApi.delete,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['work-status'] });
       queryClient.invalidateQueries({ queryKey: ['worker-stats'] });
@@ -401,7 +401,7 @@ export default function WorkStatusPage() {
   });
 
   const handleExport = async () => {
-    const blob = await workStatusApi.exportCSV();
+    const blob = await archivingStatusApi.exportCSV();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -414,7 +414,7 @@ export default function WorkStatusPage() {
     if (!file) return;
 
     try {
-      const result = await workStatusApi.importCSV(file, true);
+      const result = await archivingStatusApi.importCSV(file, true);
       alert(`Import complete: ${result.imported_rows} rows imported`);
       queryClient.invalidateQueries({ queryKey: ['work-status'] });
       queryClient.invalidateQueries({ queryKey: ['worker-stats'] });
@@ -450,7 +450,7 @@ export default function WorkStatusPage() {
       <div className="flex justify-between items-center">
         <div>
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-900">Work Status</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Archiving Status</h1>
             <SyncStatusIndicator />
           </div>
           <p className="text-sm text-gray-500 mt-1">

@@ -145,15 +145,16 @@ export const foldersApi = {
   },
 };
 
-// Work Status API
-export const workStatusApi = {
+// Archiving Status API (Issue #37 - preferred name)
+// Note: workStatusApi is deprecated, use archivingStatusApi
+export const archivingStatusApi = {
   getArchives: async (): Promise<Archive[]> => {
-    const { data } = await api.get('/work-status/archives');
+    const { data } = await api.get('/archiving-status/archives');
     return data;
   },
 
   createArchive: async (archive: { name: string; description?: string }): Promise<Archive> => {
-    const { data } = await api.post('/work-status/archives', archive);
+    const { data } = await api.post('/archiving-status/archives', archive);
     return data;
   },
 
@@ -166,27 +167,27 @@ export const workStatusApi = {
     if (filters?.archive_id) params.append('archive_id', filters.archive_id.toString());
     if (filters?.status) params.append('status', filters.status);
     if (filters?.pic) params.append('pic', filters.pic);
-    const { data } = await api.get(`/work-status?${params}`);
+    const { data } = await api.get(`/archiving-status?${params}`);
     return data;
   },
 
   getById: async (id: number): Promise<WorkStatus> => {
-    const { data } = await api.get(`/work-status/${id}`);
+    const { data } = await api.get(`/archiving-status/${id}`);
     return data;
   },
 
   create: async (workStatus: WorkStatusCreate): Promise<WorkStatus> => {
-    const { data } = await api.post('/work-status', workStatus);
+    const { data } = await api.post('/archiving-status', workStatus);
     return data;
   },
 
   update: async (id: number, workStatus: WorkStatusUpdate): Promise<WorkStatus> => {
-    const { data } = await api.put(`/work-status/${id}`, workStatus);
+    const { data } = await api.put(`/archiving-status/${id}`, workStatus);
     return data;
   },
 
   delete: async (id: number): Promise<void> => {
-    await api.delete(`/work-status/${id}`);
+    await api.delete(`/archiving-status/${id}`);
   },
 
   importCSV: async (file: File, replace = false): Promise<{
@@ -198,19 +199,22 @@ export const workStatusApi = {
   }> => {
     const formData = new FormData();
     formData.append('file', file);
-    const { data } = await api.post(`/work-status/import?replace=${replace}`, formData, {
+    const { data } = await api.post(`/archiving-status/import?replace=${replace}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return data;
   },
 
   exportCSV: async (): Promise<Blob> => {
-    const { data } = await api.get('/work-status/export/csv', {
+    const { data } = await api.get('/archiving-status/export/csv', {
       responseType: 'blob',
     });
     return data;
   },
 };
+
+// Work Status API (deprecated - use archivingStatusApi)
+export const workStatusApi = archivingStatusApi;
 
 // Generate unique client ID for viewer tracking
 const getClientId = (): string => {

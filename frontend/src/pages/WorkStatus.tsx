@@ -369,7 +369,7 @@ function WorkerDetailModal({
 export default function WorkStatusPage() {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
-  const [activeTab, setActiveTab] = useState<'tasks' | 'workers'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'workers'>('workers');  // PRD-0040: Workers 탭 기본
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
   const [, setEditingItem] = useState<WorkStatus | null>(null);
   const [, setIsModalOpen] = useState(false);

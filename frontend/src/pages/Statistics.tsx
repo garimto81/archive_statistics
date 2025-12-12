@@ -5,12 +5,12 @@
  * - File Type Distribution (Pie Chart)
  * - Top Folders by Size (Bar Chart)
  * - Storage Growth Trend (Line Chart)
- * - Codec Explorer (폴더별 코덱 정보) - FolderTreeWithProgress 재사용
+ * - Codec Explorer (폴더별 코덱 정보) - MasterFolderTree 사용
  *
- * Issue: #5, #22
+ * Issue: #5, #22, #34 (PRD-0033 통합)
  * Block: progress.dashboard
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   PieChart,
@@ -29,8 +29,8 @@ import { Files, HardDrive, Clock, FileType, BarChart3, Film } from 'lucide-react
 import clsx from 'clsx';
 import StatCard from '../components/StatCard';
 import CodecStats from '../components/CodecStats';
-import FolderTreeWithProgress from '../components/FolderTreeWithProgress';
-import CodecFolderDetail from '../components/CodecFolderDetail';
+import MasterFolderTree from '../components/MasterFolderTree';
+import MasterFolderDetail from '../components/MasterFolderDetail';
 import { statsApi, foldersApi } from '../services/api';
 import type { FolderWithProgress } from '../types';
 
@@ -47,6 +47,7 @@ type TabType = 'overview' | 'codec-explorer';
 export default function Statistics() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [selectedFolder, setSelectedFolder] = useState<FolderWithProgress | null>(null);
+
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['stats-summary'],
     queryFn: () => statsApi.getSummary(),
@@ -110,6 +111,16 @@ export default function Statistics() {
       }));
   }, [folderTree]);
 
+  // Handler for folder selection in Codec Explorer
+  const handleFolderSelect = useCallback((folder: FolderWithProgress) => {
+    setSelectedFolder(folder);
+  }, []);
+
+  // Handler for closing detail panel
+  const handleCloseDetail = useCallback(() => {
+    setSelectedFolder(null);
+  }, []);
+
   if (summaryLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -117,11 +128,6 @@ export default function Statistics() {
       </div>
     );
   }
-
-  // Handler for folder selection in Codec Explorer
-  const handleFolderSelect = (folder: FolderWithProgress) => {
-    setSelectedFolder(folder);
-  };
 
   return (
     <div className="space-y-6">
@@ -198,27 +204,42 @@ export default function Statistics() {
       {/* Codec Explorer Tab Content */}
       {activeTab === 'codec-explorer' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Codec Tree View - 2/3 width (FolderTreeWithProgress 재사용) */}
+          {/* Codec Tree View - 2/3 width (MasterFolderTree 사용) */}
           <div className="lg:col-span-2 h-[600px]">
-            <FolderTreeWithProgress
+            <MasterFolderTree
+              // 기본 설정
               initialDepth={2}
               showFiles={false}
-              displayMode="codec"
               enableLazyLoading={true}
+              enableAutoRefresh={true}
+              autoRefreshInterval={60000}
+              // 필터바 설정 (codec 모드)
+              showFilterBar={true}
+              filterBarTitle="Codec Explorer"
+              enableExtensionFilter={true}
+              enableHiddenFilter={true}
+              enableDisplayToggles={true}
+              enableSearch={true}
+              // 코덱 표시 ON, 진행률 OFF
+              showProgressBar={false}
+              showWorkBadge={false}
+              showCodecBadge={true}
+              // 이벤트 핸들러
               onFolderSelect={handleFolderSelect}
+              selectedPath={selectedFolder?.path}
+              // 스타일
+              className="h-full"
             />
           </div>
 
-          {/* Folder Detail Panel - 1/3 width */}
+          {/* Folder Detail Panel - 1/3 width (MasterFolderDetail 사용) */}
           <div className="lg:col-span-1">
-            {selectedFolder ? (
-              <CodecFolderDetail folderPath={selectedFolder.path} />
-            ) : (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 text-center text-gray-500">
-                <Film className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-sm">폴더를 선택하면 코덱 상세 정보를 확인할 수 있습니다.</p>
-              </div>
-            )}
+            <MasterFolderDetail
+              folder={selectedFolder}
+              mode="codec"
+              onClose={handleCloseDetail}
+              className="h-full overflow-y-auto"
+            />
           </div>
         </div>
       )}

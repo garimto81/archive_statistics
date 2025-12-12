@@ -177,13 +177,18 @@ class SheetsSyncService:
 
             if len(all_values) < 3:
                 logger.warning("Sheet has insufficient rows")
-                return SyncResult(
+                result = SyncResult(
                     success=True,
                     synced_at=datetime.now(),
                     total_records=0,
                     synced_count=0,
                     error="Sheet has insufficient rows",
                 )
+                # 상태 업데이트 (early return 케이스)
+                self.last_sync_time = result.synced_at
+                self.last_sync_result = result
+                self.status = "idle"
+                return result
 
             # Row 2를 헤더로 사용 (index 1)
             headers = [self._normalize_header(h) for h in all_values[1]]
@@ -228,28 +233,36 @@ class SheetsSyncService:
         except gspread.exceptions.APIError as e:
             error_msg = f"Google Sheets API error: {e}"
             logger.error(error_msg)
-            self.last_error = error_msg
-            self.status = "error"
-            return SyncResult(
+            result = SyncResult(
                 success=False,
                 synced_at=datetime.now(),
                 total_records=0,
                 synced_count=0,
                 error=error_msg,
             )
+            # 에러 시에도 last_sync_time 업데이트 (시도 시간 기록)
+            self.last_sync_time = result.synced_at
+            self.last_sync_result = result
+            self.last_error = error_msg
+            self.status = "error"
+            return result
 
         except Exception as e:
             error_msg = f"Sync error: {e}"
             logger.exception(error_msg)
-            self.last_error = str(e)
-            self.status = "error"
-            return SyncResult(
+            result = SyncResult(
                 success=False,
                 synced_at=datetime.now(),
                 total_records=0,
                 synced_count=0,
                 error=str(e),
             )
+            # 에러 시에도 last_sync_time 업데이트 (시도 시간 기록)
+            self.last_sync_time = result.synced_at
+            self.last_sync_result = result
+            self.last_error = str(e)
+            self.status = "error"
+            return result
 
     async def _sync_to_db(
         self,

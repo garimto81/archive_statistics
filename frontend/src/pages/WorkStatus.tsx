@@ -53,10 +53,21 @@ function SyncStatusIndicator() {
 
   const syncMutation = useMutation({
     mutationFn: syncApi.trigger,
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // 동기화 결과와 관계없이 캐시 무효화 (에러 상태도 반영되어야 함)
       queryClient.invalidateQueries({ queryKey: ['sync-status'] });
       queryClient.invalidateQueries({ queryKey: ['work-status'] });
       queryClient.invalidateQueries({ queryKey: ['worker-stats'] });
+      // API는 성공했지만 동기화가 실패한 경우 콘솔에 기록
+      if (!data.success) {
+        console.warn('Sync completed with errors:', data.error);
+      }
+    },
+    onError: (error) => {
+      // 네트워크 에러 등 API 호출 자체가 실패한 경우
+      console.error('Sync API failed:', error);
+      // 상태 새로고침하여 에러 상태 반영
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
     },
   });
 

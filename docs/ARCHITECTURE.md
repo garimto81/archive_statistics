@@ -20,13 +20,13 @@
 │    ├── progress.py   → /api/progress/tree (핵심 API) ⭐      │
 │    ├── stats.py      → /api/stats                           │
 │    ├── folders.py    → /api/folders                         │
-│    ├── work_status.py → /api/work-status                    │
+│    ├── archiving_status.py → /api/archiving-status ⭐       │
 │    ├── sync.py       → /api/sync                            │
 │    └── scan.py       → /api/scan                            │
 │  app/services/                                               │
 │    ├── progress_service.py → 폴더-카테고리 매칭 (핵심) ⭐     │
 │    ├── scanner.py         → NAS 파일 스캔 + ffprobe          │
-│    └── sheets_sync.py     → Google Sheets 동기화             │
+│    └── archiving_status_sync.py → Google Sheets 동기화      │
 └──────────────────────────┬──────────────────────────────────┘
                            │
         ┌──────────────────┴──────────────────┐
@@ -36,7 +36,7 @@
 │  - FolderStats    │               │  - 비디오 파일       │
 │  - FileStats      │               │  - ffprobe 메타데이터│
 │  - WorkStatus     │               └──────────────────────┘
-│  - HandAnalysis   │
+│  - ArchiveMetadata│
 └───────────────────┘
 ```
 
@@ -51,12 +51,14 @@
 | `/api/folders` | GET | 폴더 트리 구조 |
 | `/api/progress/tree` | GET | 진행률 포함 폴더 트리 ⭐ |
 | `/api/scan` | POST | NAS 스캔 시작 |
-| `/api/work-status` | GET | 아카이빙 작업 현황 |
+| `/api/archiving-status` | GET | 아카이빙 작업 현황 ⭐ |
 | `/api/sync/status` | GET | Google Sheets 동기화 상태 |
 | `/api/sync/trigger` | POST | 수동 동기화 트리거 |
-| `/api/hands` | GET | Hand Analysis 데이터 |
+| `/api/metadata` | GET | Archive Metadata 데이터 |
 | `/api/data-sources` | GET | 데이터 소스 상태 |
 | `/api/worker-stats` | GET | 작업자별 통계 |
+
+> Note: `/api/work-status`는 deprecated. `/api/archiving-status` 사용 권장 (#37)
 
 ---
 
@@ -122,24 +124,27 @@ ARCHIVE/
 backend/app/
 ├── api/
 │   ├── __init__.py
-│   ├── progress.py        # Progress API (핵심)
-│   ├── stats.py           # 통계 API
-│   ├── folders.py         # 폴더 트리 API
-│   ├── work_status.py     # 작업 현황 API
-│   ├── sync.py            # Google Sheets 동기화
-│   ├── scan.py            # NAS 스캔
-│   ├── hands.py           # Hand Analysis
-│   ├── data_sources.py    # 데이터 소스
-│   └── worker_stats.py    # 작업자 통계
+│   ├── progress.py           # Progress API (핵심)
+│   ├── stats.py              # 통계 API
+│   ├── folders.py            # 폴더 트리 API
+│   ├── archiving_status.py   # 아카이빙 작업 현황 API ⭐
+│   ├── work_status.py        # (deprecated, use archiving_status.py)
+│   ├── sync.py               # Google Sheets 동기화
+│   ├── scan.py               # NAS 스캔
+│   ├── metadata.py           # Archive Metadata API
+│   ├── data_sources.py       # 데이터 소스
+│   └── worker_stats.py       # 작업자 통계
 ├── services/
-│   ├── progress_service.py  # 매칭 로직 (핵심)
-│   ├── scanner.py           # NAS 스캔 + ffprobe
-│   ├── sheets_sync.py       # Sheets API 연동
-│   └── hand_analysis_sync.py
+│   ├── progress_service.py   # 매칭 로직 (핵심)
+│   ├── scanner.py            # NAS 스캔 + ffprobe
+│   ├── archiving_status_sync.py  # Sheets API 연동 ⭐
+│   ├── sheets_sync.py        # (deprecated, use archiving_status_sync.py)
+│   └── archive_metadata_sync.py
 ├── models/
-│   ├── file_stats.py        # FileStats, FolderStats
-│   ├── work_status.py       # WorkStatus
-│   └── hand_analysis.py     # HandAnalysis
+│   ├── file_stats.py         # FileStats, FolderStats
+│   ├── archiving_status.py   # ArchivingStatus (alias for WorkStatus) ⭐
+│   ├── work_status.py        # WorkStatus (base model)
+│   └── archive_metadata.py   # ArchiveMetadata
 ├── schemas/
 │   ├── stats.py
 │   ├── work_status.py
@@ -182,5 +187,5 @@ AI 컨텍스트 최적화를 위한 도메인 분리. 상세: [BLOCK_AGENT_SYSTE
 |--------|----------|------|
 | Scanner | `scanner.py`, `file_stats.py` | NAS 스캔, 메타데이터 |
 | Progress | `progress_service.py`, `FolderTreeWithProgress.tsx` | 작업 진행률 |
-| Sync | `sheets_sync.py`, `hand_analysis.py` | Sheets 동기화 |
+| Sync | `archiving_status_sync.py`, `archive_metadata_sync.py` | Sheets 동기화 |
 | Reconciliation | `progress_service.py:202-665` | NAS-Sheets 일관성 |

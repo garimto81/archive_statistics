@@ -1,3 +1,12 @@
+"""
+Work Status API - 아카이빙 작업 현황 조회 및 관리
+
+Block: api.work
+Note: This module is deprecated (Issue #37)
+      Use archiving_status.py instead
+      The /api/work-status endpoint is kept for backward compatibility
+      New code should use /api/archiving-status
+"""
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession

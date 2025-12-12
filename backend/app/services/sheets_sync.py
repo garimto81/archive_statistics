@@ -1,10 +1,12 @@
 """
-Google Sheets 자동 동기화 서비스
+Archiving Status Google Sheets 동기화 서비스
 
-Source of Truth: Google Sheets (Work Status)
+Source of Truth: Google Sheets (아카이빙 작업 현황)
 Target: work_status 테이블
 
-Block: sync.sheets
+Block: sync.status
+Note: Renamed from SheetsSyncService (Issue #37)
+      Use ArchivingStatusSyncService as the preferred name in new code
 """
 import logging
 from datetime import datetime
@@ -67,7 +69,9 @@ class SheetsSyncService:
     @property
     def is_enabled(self) -> bool:
         """동기화 활성화 여부"""
-        return settings.SHEETS_SYNC_ENABLED and bool(settings.WORK_STATUS_SHEET_URL)
+        # Use new setting, fallback to deprecated one for backward compatibility
+        sheet_url = settings.ARCHIVING_STATUS_SHEET_URL or settings.WORK_STATUS_SHEET_URL
+        return settings.SHEETS_SYNC_ENABLED and bool(sheet_url)
 
     async def start(self):
         """동기화 서비스 시작"""
@@ -168,7 +172,9 @@ class SheetsSyncService:
         try:
             # 1. Sheets 데이터 fetch
             client = self._get_client()
-            sheet = client.open_by_url(settings.WORK_STATUS_SHEET_URL)
+            # Use new setting, fallback to deprecated one for backward compatibility
+            sheet_url = settings.ARCHIVING_STATUS_SHEET_URL or settings.WORK_STATUS_SHEET_URL
+            sheet = client.open_by_url(sheet_url)
             worksheet = sheet.get_worksheet(0)
 
             # 시트 구조: Row 1 = 제목, Row 2 = 헤더, Row 3+ = 데이터
@@ -452,3 +458,7 @@ class SheetsSyncService:
 
 # 싱글톤 인스턴스
 sheets_sync_service = SheetsSyncService()
+
+# New names (Issue #37 - use these in new code)
+ArchivingStatusSyncService = SheetsSyncService
+archiving_status_sync_service = sheets_sync_service

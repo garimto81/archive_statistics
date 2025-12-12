@@ -3,7 +3,7 @@ Data Sources API - 통합 데이터 소스 상태 조회
 
 모든 Google Sheets 데이터 소스의 상태를 통합하여 제공합니다.
 - archive db (Work Status)
-- metadata db (Hand Analysis)
+- metadata db (Archive Metadata)
 - iconik db (MAM Metadata - 미구현)
 
 Block: api.data_sources
@@ -17,9 +17,9 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app.services.sheets_sync import sheets_sync_service
-from app.services.hand_analysis_sync import hand_analysis_sync_service
+from app.services.archive_metadata_sync import archive_metadata_sync_service
 from app.models.work_status import WorkStatus
-from app.models.hand_analysis import HandAnalysis
+from app.models.archive_metadata import ArchiveMetadata
 
 router = APIRouter()
 
@@ -55,9 +55,9 @@ class WorkStatusSummary(BaseModel):
     last_sync: Optional[str]
 
 
-class HandAnalysisSummary(BaseModel):
-    """Hand Analysis 요약"""
-    total_hands: int
+class ArchiveMetadataSummary(BaseModel):
+    """Archive Metadata 요약"""
+    total_entries: int
     worksheets_count: int
     by_worksheet: List[dict]
     last_sync: Optional[str]
@@ -90,21 +90,21 @@ async def get_all_data_sources():
         } if sheets_result else None,
     )
 
-    # metadata_db (Hand Analysis)
-    hand_result = hand_analysis_sync_service.last_sync_result
+    # metadata_db (Archive Metadata)
+    metadata_result = archive_metadata_sync_service.last_sync_result
     metadata_db = DataSourceStatus(
         name="metadata db",
-        type="Hand Analysis",
-        enabled=hand_analysis_sync_service.is_enabled,
-        status=hand_analysis_sync_service.status,
-        last_sync=hand_analysis_sync_service.last_sync_time.isoformat() if hand_analysis_sync_service.last_sync_time else None,
-        next_sync=hand_analysis_sync_service.next_sync_time.isoformat() if hand_analysis_sync_service.next_sync_time else None,
-        record_count=hand_result.synced_count if hand_result else 0,
+        type="Archive Metadata",
+        enabled=archive_metadata_sync_service.is_enabled,
+        status=archive_metadata_sync_service.status,
+        last_sync=archive_metadata_sync_service.last_sync_time.isoformat() if archive_metadata_sync_service.last_sync_time else None,
+        next_sync=archive_metadata_sync_service.next_sync_time.isoformat() if archive_metadata_sync_service.next_sync_time else None,
+        record_count=metadata_result.synced_count if metadata_result else 0,
         details={
-            "created": hand_result.created_count if hand_result else 0,
-            "updated": hand_result.updated_count if hand_result else 0,
-            "worksheets": hand_result.worksheets_processed if hand_result else 0,
-        } if hand_result else None,
+            "created": metadata_result.created_count if metadata_result else 0,
+            "updated": metadata_result.updated_count if metadata_result else 0,
+            "worksheets": metadata_result.worksheets_processed if metadata_result else 0,
+        } if metadata_result else None,
     )
 
     # iconik_db (미구현)
@@ -163,25 +163,25 @@ async def get_work_status_summary(
     )
 
 
-@router.get("/hand-analysis/summary", response_model=HandAnalysisSummary)
-async def get_hand_analysis_summary(
+@router.get("/archive-metadata/summary", response_model=ArchiveMetadataSummary)
+async def get_archive_metadata_summary(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Hand Analysis 요약 (Dashboard용)
+    Archive Metadata 요약 (Dashboard용)
 
-    - 총 핸드 수
-    - 워크시트별 핸드 수 분포
+    - 총 엔트리 수
+    - 워크시트별 엔트리 수 분포
     """
-    # 총 핸드 수
-    total_query = select(func.count(HandAnalysis.id))
-    total_hands = await db.scalar(total_query) or 0
+    # 총 엔트리 수
+    total_query = select(func.count(ArchiveMetadata.id))
+    total_entries = await db.scalar(total_query) or 0
 
     # 워크시트별 집계
     ws_query = select(
-        HandAnalysis.source_worksheet,
-        func.count(HandAnalysis.id).label('count')
-    ).group_by(HandAnalysis.source_worksheet).order_by(func.count(HandAnalysis.id).desc())
+        ArchiveMetadata.source_worksheet,
+        func.count(ArchiveMetadata.id).label('count')
+    ).group_by(ArchiveMetadata.source_worksheet).order_by(func.count(ArchiveMetadata.id).desc())
 
     ws_result = await db.execute(ws_query)
     by_worksheet = [
@@ -189,9 +189,9 @@ async def get_hand_analysis_summary(
         for row in ws_result.fetchall()
     ]
 
-    return HandAnalysisSummary(
-        total_hands=total_hands,
+    return ArchiveMetadataSummary(
+        total_entries=total_entries,
         worksheets_count=len(by_worksheet),
         by_worksheet=by_worksheet,
-        last_sync=hand_analysis_sync_service.last_sync_time.isoformat() if hand_analysis_sync_service.last_sync_time else None,
+        last_sync=archive_metadata_sync_service.last_sync_time.isoformat() if archive_metadata_sync_service.last_sync_time else None,
     )

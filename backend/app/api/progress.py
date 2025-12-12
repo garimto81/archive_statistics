@@ -99,6 +99,15 @@ class FileWithProgress(BaseModel):
     audio_codec: Optional[str] = None
 
 
+class FolderRootStats(BaseModel):
+    """폴더의 루트 전체 대비 비율 (Issue #29)"""
+    total_files: int = 0
+    total_size: int = 0
+    total_size_formatted: str = "0 B"
+    file_ratio: float = 0.0  # 현재 폴더 파일 수 / 전체 파일 수 * 100
+    size_ratio: float = 0.0  # 현재 폴더 용량 / 전체 용량 * 100
+
+
 class FolderWithProgress(BaseModel):
     """폴더 + 진행률 (재귀 구조)"""
     id: int
@@ -122,6 +131,9 @@ class FolderWithProgress(BaseModel):
     # 코덱 정보 (Codec Explorer용)
     codec_summary: Optional[FolderCodecSummary] = None
 
+    # Issue #29: 루트 전체 대비 비율 (NAS/Sheets 데이터 분리 표시용)
+    root_stats: Optional[FolderRootStats] = None
+
     # 하위 호환성
     work_status: Optional[WorkStatusInfo] = None  # deprecated
 
@@ -132,13 +144,30 @@ class FolderWithProgress(BaseModel):
         from_attributes = True
 
 
+class RootStats(BaseModel):
+    """전체 아카이브 통계 (Issue #29)"""
+    total_files: int = 0
+    total_size: int = 0
+    total_size_formatted: str = "0 B"
+    total_duration: float = 0
+    total_duration_formatted: str = "00:00:00"
+    sheets_total_videos: int = 0
+    sheets_total_done: int = 0
+
+
+class TreeWithRootStats(BaseModel):
+    """폴더 트리 + 루트 통계 (Issue #29)"""
+    tree: List[FolderWithProgress] = []
+    root_stats: RootStats
+
+
 # Forward reference 해결
 FolderWithProgress.model_rebuild()
 
 
 # ==================== Endpoints ====================
 
-@router.get("/tree", response_model=List[FolderWithProgress])
+@router.get("/tree", response_model=TreeWithRootStats)
 async def get_folder_tree_with_progress(
     path: Optional[str] = Query(None, description="시작 경로 (None=루트)"),
     depth: int = Query(2, ge=1, le=10, description="탐색 깊이 (1-10)"),
@@ -155,19 +184,20 @@ async def get_folder_tree_with_progress(
     - include_files=true 시 파일별 진행률 포함
     - include_codecs=true 시 폴더/파일별 코덱 정보 포함
     - extensions 필터로 특정 확장자만 포함
+    - Issue #29: root_stats로 전체 통계 반환 (NAS/Sheets 데이터 분리 표시용)
 
     Returns:
-        폴더 트리 + 진행률 데이터
+        {tree: 폴더 트리, root_stats: 전체 통계}
     """
     # Parse extensions filter
     ext_list = None
     if extensions:
         ext_list = [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",")]
 
-    tree = await progress_service.get_folder_with_progress(
+    result = await progress_service.get_folder_with_progress(
         db, path, depth, include_files, ext_list, include_codecs
     )
-    return tree
+    return result
 
 
 @router.get("/folder/{folder_path:path}")

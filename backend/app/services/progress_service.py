@@ -91,7 +91,7 @@ class ProgressService:
         include_files: bool = False,
         extensions: Optional[List[str]] = None,
         include_codecs: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         폴더 트리와 진행률 정보를 함께 반환
 
@@ -102,6 +102,9 @@ class ProgressService:
             include_files: 파일 목록 포함 여부
             extensions: 확장자 필터 목록 (예: ['.mp4', '.mkv'])
             include_codecs: 코덱 정보 포함 여부
+
+        Returns:
+            Dict with 'tree' (폴더 목록) and 'root_stats' (전체 통계)
         """
         # Step 1: Work Status 전체 로드 (archive db)
         work_statuses = await self._load_work_statuses(db)
@@ -111,7 +114,11 @@ class ProgressService:
         hand_data = await self._load_hand_analysis_data(db)
         logger.info(f"Loaded {len(hand_data)} unique file titles from metadata db")
 
-        # Step 3: 폴더 트리 구축
+        # Step 3: 루트 전체 통계 계산 (Issue #29: NAS/Sheets 데이터 분리 표시용)
+        root_stats = await self._calculate_root_stats(db, path, extensions)
+        logger.info(f"Root stats: {root_stats}")
+
+        # Step 4: 폴더 트리 구축
         if path:
             query = select(FolderStats).where(FolderStats.parent_path == path)
         else:
@@ -138,13 +145,98 @@ class ProgressService:
         for folder in folders:
             folder_data, folder_used_ids = await self._build_folder_progress(
                 db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs,
-                parent_work_status_ids=root_sibling_used_ids.copy()  # 조상+이전형제 ID 전달
+                parent_work_status_ids=root_sibling_used_ids.copy(),  # 조상+이전형제 ID 전달
+                root_stats=root_stats,  # 루트 통계 전달
             )
             tree.append(folder_data)
             # 이 폴더와 하위에서 사용된 ID를 다음 형제에게 전파
             root_sibling_used_ids.update(folder_used_ids)
 
-        return tree
+        return {
+            "tree": tree,
+            "root_stats": root_stats,
+        }
+
+    # === BLOCK: progress.root_stats ===
+    # Description: 루트 전체 통계 계산 (Issue #29: NAS/Sheets 데이터 분리 표시용)
+    # Dependencies: FolderStats, FileStats, WorkStatus
+    # AI Context: 전체 대비 비율 표시에 사용
+
+    async def _calculate_root_stats(
+        self,
+        db: AsyncSession,
+        path: Optional[str] = None,
+        extensions: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """루트(또는 기준 경로) 전체 통계 계산
+
+        Issue #29: NAS 데이터와 Sheets 데이터 분리 표시를 위해
+        전체 파일 수/용량을 계산하여 각 폴더가 비율로 표시할 수 있게 함.
+
+        Args:
+            path: 기준 경로 (None이면 전체 ARCHIVE)
+            extensions: 확장자 필터
+
+        Returns:
+            {
+                "total_files": 전체 파일 수,
+                "total_size": 전체 용량 (bytes),
+                "total_size_formatted": 포맷된 용량,
+                "total_duration": 전체 재생시간,
+                "total_duration_formatted": 포맷된 재생시간,
+                "sheets_total_videos": Sheets 전체 total_videos 합계,
+                "sheets_total_done": Sheets 전체 excel_done 합계,
+            }
+        """
+        # NAS 전체 통계 (depth=0 폴더들의 합계)
+        if path:
+            # 특정 경로 하위의 통계
+            folder_query = select(FolderStats).where(FolderStats.path == path)
+            folder_result = await db.execute(folder_query)
+            root_folder = folder_result.scalar_one_or_none()
+
+            if root_folder:
+                total_files = root_folder.file_count
+                total_size = root_folder.total_size
+                total_duration = root_folder.total_duration or 0
+            else:
+                total_files = 0
+                total_size = 0
+                total_duration = 0
+        else:
+            # 전체 ARCHIVE 통계 (depth=0 폴더들의 합계)
+            stats_query = select(
+                func.sum(FolderStats.file_count),
+                func.sum(FolderStats.total_size),
+                func.sum(FolderStats.total_duration),
+            ).where(FolderStats.depth == 0)
+            stats_result = await db.execute(stats_query)
+            row = stats_result.fetchone()
+            total_files = row[0] or 0
+            total_size = row[1] or 0
+            total_duration = row[2] or 0
+
+        # Sheets 전체 통계
+        sheets_query = select(
+            func.sum(WorkStatus.total_videos),
+            func.sum(WorkStatus.excel_done),
+        )
+        sheets_result = await db.execute(sheets_query)
+        sheets_row = sheets_result.fetchone()
+        sheets_total_videos = sheets_row[0] or 0
+        sheets_total_done = sheets_row[1] or 0
+
+        return {
+            "total_files": total_files,
+            "total_size": total_size,
+            "total_size_formatted": format_size(total_size),
+            "total_duration": total_duration,
+            "total_duration_formatted": format_duration(total_duration),
+            "sheets_total_videos": sheets_total_videos,
+            "sheets_total_done": sheets_total_done,
+        }
+
+    # === END BLOCK: progress.root_stats ===
 
     # === BLOCK: progress.data_loader ===
     # Description: Work Status 및 Hand Analysis 데이터 로드
@@ -441,6 +533,7 @@ class ProgressService:
         extensions: Optional[List[str]] = None,
         include_codecs: bool = False,
         parent_work_status_ids: Optional[Set[int]] = None,  # 상위 폴더에서 매칭된 work_status ID들
+        root_stats: Optional[Dict[str, Any]] = None,  # Issue #29: 루트 전체 통계
     ) -> Tuple[Dict[str, Any], Set[int]]:
         """폴더 데이터 구축 (archive db + metadata db + codecs 통합)
 
@@ -468,6 +561,21 @@ class ProgressService:
             "duration_formatted": format_duration(folder.total_duration),
             "depth": folder.depth,
         }
+
+        # Issue #29: 루트 전체 대비 비율 정보 (NAS/Sheets 데이터 분리 표시용)
+        if root_stats:
+            root_total_files = root_stats.get("total_files", 0)
+            root_total_size = root_stats.get("total_size", 0)
+            folder_dict["root_stats"] = {
+                "total_files": root_total_files,
+                "total_size": root_total_size,
+                "total_size_formatted": root_stats.get("total_size_formatted", "0 B"),
+                # 현재 폴더의 비율 계산
+                "file_ratio": round(folder.file_count / root_total_files * 100, 1) if root_total_files > 0 else 0,
+                "size_ratio": round(folder.total_size / root_total_size * 100, 1) if root_total_size > 0 else 0,
+            }
+        else:
+            folder_dict["root_stats"] = None
 
         # === archive db: Work Status 매칭 ===
         # 우선순위: 1. FK 기반 (명시적 연결) > 2. Fuzzy matching (fallback)
@@ -654,7 +762,8 @@ class ProgressService:
                 child_data, child_used_ids = await self._build_folder_progress(
                     db, child, work_statuses, hand_data,
                     max_depth, current_depth + 1, include_files, extensions, include_codecs,
-                    parent_work_status_ids=child_parent_ids  # 상위+형제 매칭 ID 전파
+                    parent_work_status_ids=child_parent_ids,  # 상위+형제 매칭 ID 전파
+                    root_stats=root_stats,  # Issue #29: 루트 통계 전달
                 )
                 children.append(child_data)
 

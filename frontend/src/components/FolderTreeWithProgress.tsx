@@ -329,14 +329,28 @@ function FolderNode({
         </span>
 
         {/* Folder Name */}
-        <span className="text-sm font-medium truncate max-w-[180px]" title={folder.name}>
+        <span className="text-sm font-medium truncate max-w-[160px]" title={folder.name}>
           {folder.name}
         </span>
 
-        {/* 항상 표시: 파일 수 & 용량 */}
-        <span className="text-xs text-gray-400 ml-2 flex-shrink-0">
-          {folder.file_count}개 · {folder.size_formatted}
+        {/* Issue #29: NAS 데이터 (파일 수/전체, 용량/전체) */}
+        <span className="text-xs text-gray-500 ml-2 flex-shrink-0 font-mono" title="NAS 데이터">
+          {folder.root_stats ? (
+            <>
+              <span className="text-blue-600">({folder.file_count}/{folder.root_stats.total_files})</span>
+              <span className="text-gray-400 mx-0.5">·</span>
+              <span className="text-purple-600">({folder.size_formatted}/{folder.root_stats.total_size_formatted})</span>
+            </>
+          ) : (
+            // root_stats가 없으면 기존 표시 유지
+            <>{folder.file_count}개 · {folder.size_formatted}</>
+          )}
         </span>
+
+        {/* Issue #29: 구분자 */}
+        {!isCodecMode && folder.root_stats && (
+          <span className="text-gray-300 mx-1 flex-shrink-0">|</span>
+        )}
 
         {/* Codec Mode: Show codec summary */}
         {isCodecMode && (
@@ -492,17 +506,27 @@ function ProgressLegend({ displayMode }: { displayMode: DisplayMode }) {
 
   return (
     <div className="flex items-center gap-4 text-xs text-gray-500 px-4 py-2 bg-gray-50 border-b border-gray-100">
+      {/* Issue #29: NAS/Sheets 데이터 분리 범례 */}
       <div className="flex items-center gap-1">
-        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">작업중</span>
-        <span>엑셀 작업 현황</span>
+        <span className="text-blue-600 font-mono">(N/T)</span>
+        <span>NAS 파일</span>
       </div>
       <div className="flex items-center gap-1">
+        <span className="text-purple-600 font-mono">(N/T)</span>
+        <span>용량</span>
+      </div>
+      <div className="flex items-center gap-0.5 text-gray-300">|</div>
+      <div className="flex items-center gap-1">
         <div className="w-4 h-1.5 bg-blue-500 rounded-full" />
-        <span>진행률</span>
+        <span>Sheets 진행률</span>
       </div>
       <div className="flex items-center gap-1">
         <div className="w-4 h-1.5 bg-green-500 rounded-full" />
         <span>완료</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-orange-500">📊</span>
+        <span>시트 원본</span>
       </div>
     </div>
   );

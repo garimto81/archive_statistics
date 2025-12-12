@@ -317,6 +317,17 @@ export interface FolderCodecSummary {
   top_audio_codec: string | null;
 }
 
+/**
+ * 폴더의 루트 전체 대비 비율 (Issue #29: NAS/Sheets 데이터 분리 표시용)
+ */
+export interface FolderRootStats {
+  total_files: number;
+  total_size: number;
+  total_size_formatted: string;
+  file_ratio: number;  // 현재 폴더 파일 수 / 전체 파일 수 * 100
+  size_ratio: number;  // 현재 폴더 용량 / 전체 용량 * 100
+}
+
 export interface FolderWithProgress {
   id: number;
   name: string;
@@ -335,8 +346,31 @@ export interface FolderWithProgress {
   hand_analysis?: HandAnalysisInfo;
   // 코덱 정보 (Codec Explorer용)
   codec_summary?: FolderCodecSummary;
+  // Issue #29: 루트 전체 대비 비율 (NAS/Sheets 데이터 분리 표시용)
+  root_stats?: FolderRootStats;
   children: FolderWithProgress[];
   files?: FileWithProgress[];
+}
+
+/**
+ * 전체 아카이브 통계 (Issue #29)
+ */
+export interface RootStats {
+  total_files: number;
+  total_size: number;
+  total_size_formatted: string;
+  total_duration: number;
+  total_duration_formatted: string;
+  sheets_total_videos: number;
+  sheets_total_done: number;
+}
+
+/**
+ * 폴더 트리 + 루트 통계 응답 (Issue #29)
+ */
+export interface TreeWithRootStats {
+  tree: FolderWithProgress[];
+  root_stats: RootStats;
 }
 
 export interface ProgressSummary {

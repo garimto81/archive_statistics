@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Version**: 1.27.0 | **Last Updated**: 2025-12-12
+**Version**: 1.28.0 | **Last Updated**: 2025-12-12
 
 ## Project Overview
 
@@ -103,5 +103,6 @@ GOOGLE_SHEETS_ID=1abc...
 
 | 버전 | 날짜 | 변경 |
 |------|------|------|
+| 1.28.0 | 2025-12-12 | NAS/Sheets 데이터 분리 표시 (#29), 파일 메타데이터 표시 개선 |
 | 1.27.0 | 2025-12-12 | 문서 분리 (DEVELOPMENT, ARCHITECTURE, DEBUGGING) |
 | 1.26.0 | 2025-12-11 | Google Sheets 동기화 기능 |

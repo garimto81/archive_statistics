@@ -3,7 +3,7 @@ Progress Service - 통합 진행률 계산
 
 핵심 원칙:
 1. archive db (work_status): 폴더-카테고리 매칭 유지
-2. metadata db (hand_analysis): 파일 기반 매칭 → 폴더로 집계
+2. metadata db (archive_metadata): 파일 기반 매칭 → 폴더로 집계
 3. 하이어라키: 모든 폴더 + 파일 출력
 4. 진행률 바: 최상위부터 모든 레벨에서 표시
 
@@ -13,7 +13,7 @@ Progress Service - 통합 진행률 계산
 | progress.utils          | 25-55     | 정규화/유사도 헬퍼 함수  |
 | progress.data_loader    | 105-160   | DB 데이터 로드           |
 | progress.matcher        | 162-285   | 폴더-카테고리 매칭       |
-| progress.file_matcher   | 287-323   | 파일-핸드 매칭           |
+| progress.file_matcher   | 287-323   | 파일-메타데이터 매칭     |
 | progress.aggregator     | 325-642   | 하이어라키 합산/코덱집계 |
 | progress.file_query     | 644-708   | 파일 목록 조회           |
 | progress.folder_detail  | 710-854   | 폴더 상세 조회           |
@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.models.file_stats import FolderStats, FileStats
-from app.models.hand_analysis import HandAnalysis
+from app.models.archive_metadata import ArchiveMetadata
 from app.models.work_status import WorkStatus
 # 중복 제거: format_size, format_duration을 공통 utils에서 import
 from app.services.utils import format_size, format_duration
@@ -110,9 +110,9 @@ class ProgressService:
         work_statuses = await self._load_work_statuses(db)
         logger.info(f"Loaded {len(work_statuses)} work statuses from archive db")
 
-        # Step 2: Hand Analysis 전체 로드 (metadata db)
-        hand_data = await self._load_hand_analysis_data(db)
-        logger.info(f"Loaded {len(hand_data)} unique file titles from metadata db")
+        # Step 2: Archive Metadata 전체 로드 (metadata db)
+        metadata_data = await self._load_metadata_data(db)
+        logger.info(f"Loaded {len(metadata_data)} unique file titles from metadata db")
 
         # Step 3: 루트 전체 통계 계산 (Issue #29: NAS/Sheets 데이터 분리 표시용)
         root_stats = await self._calculate_root_stats(db, path, extensions)
@@ -144,7 +144,7 @@ class ProgressService:
 
         for folder in folders:
             folder_data, folder_used_ids = await self._build_folder_progress(
-                db, folder, work_statuses, hand_data, depth, 0, include_files, extensions, include_codecs,
+                db, folder, work_statuses, metadata_data, depth, 0, include_files, extensions, include_codecs,
                 parent_work_status_ids=root_sibling_used_ids.copy(),  # 조상+이전형제 ID 전달
                 root_stats=root_stats,  # 루트 통계 전달
             )
@@ -239,8 +239,8 @@ class ProgressService:
     # === END BLOCK: progress.root_stats ===
 
     # === BLOCK: progress.data_loader ===
-    # Description: Work Status 및 Hand Analysis 데이터 로드
-    # Dependencies: WorkStatus, HandAnalysis models
+    # Description: Work Status 및 Archive Metadata 데이터 로드
+    # Dependencies: WorkStatus, ArchiveMetadata models
     # AI Context: 데이터 로딩 문제 디버깅 시
 
     async def _load_work_statuses(self, db: AsyncSession) -> Dict[str, Any]:
@@ -267,29 +267,29 @@ class ProgressService:
             }
         return work_statuses
 
-    async def _load_hand_analysis_data(self, db: AsyncSession) -> Dict[str, Dict]:
-        """Hand Analysis (metadata db) 로드 - file_name 기준"""
+    async def _load_metadata_data(self, db: AsyncSession) -> Dict[str, Dict]:
+        """Archive Metadata (metadata db) 로드 - file_name 기준"""
         query = select(
-            HandAnalysis.file_name,
-            func.count(HandAnalysis.id).label('hand_count'),
-            func.max(HandAnalysis.timecode_out_sec).label('max_timecode'),
+            ArchiveMetadata.file_name,
+            func.count(ArchiveMetadata.id).label('hand_count'),
+            func.max(ArchiveMetadata.timecode_out_sec).label('max_timecode'),
         ).where(
-            HandAnalysis.file_name.isnot(None),
-            HandAnalysis.file_name != ''
-        ).group_by(HandAnalysis.file_name)
+            ArchiveMetadata.file_name.isnot(None),
+            ArchiveMetadata.file_name != ''
+        ).group_by(ArchiveMetadata.file_name)
 
         result = await db.execute(query)
 
-        hand_data = {}
+        metadata_data = {}
         for row in result.fetchall():
             file_name = row[0]
-            hand_data[file_name] = {
+            metadata_data[file_name] = {
                 'hand_count': row[1],
                 'max_timecode_sec': row[2] or 0,
                 'max_timecode_formatted': format_duration(row[2] or 0),
             }
 
-        return hand_data
+        return metadata_data
 
     # === END BLOCK: progress.data_loader ===
 
@@ -471,45 +471,45 @@ class ProgressService:
     # === END BLOCK: progress.matcher ===
 
     # === BLOCK: progress.file_matcher ===
-    # Description: NAS 파일명과 Hand Analysis 매칭
-    # Dependencies: hand_data, normalize_name, calculate_similarity
+    # Description: NAS 파일명과 Archive Metadata 매칭
+    # Dependencies: metadata_data, normalize_name, calculate_similarity
     # AI Context: 파일 진행률 표시 문제 시
 
-    def _match_file_to_hand(
+    def _match_file_to_metadata(
         self,
         file_name: str,
-        hand_data: Dict[str, Dict]
+        metadata_data: Dict[str, Dict]
     ) -> Tuple[Optional[str], Dict]:
-        """NAS 파일명과 Hand Analysis file_name 매칭"""
-        if not file_name or not hand_data:
+        """NAS 파일명과 Archive Metadata file_name 매칭"""
+        if not file_name or not metadata_data:
             return None, {}
 
         file_normalized = normalize_name(file_name)
         best_match = None
         best_score = 0.0
 
-        for hand_title, hand_info in hand_data.items():
-            hand_normalized = normalize_name(hand_title)
+        for metadata_title, metadata_info in metadata_data.items():
+            hand_normalized = normalize_name(metadata_title)
 
             # 1. 정확 일치
             if file_normalized == hand_normalized:
-                return hand_title, hand_info
+                return metadata_title, metadata_info
 
             # 2. 포함 관계
             if file_normalized in hand_normalized or hand_normalized in file_normalized:
                 score = 0.8
                 if score > best_score:
                     best_score = score
-                    best_match = hand_title
+                    best_match = metadata_title
 
             # 3. 키워드 유사도
-            similarity = calculate_similarity(file_name, hand_title)
+            similarity = calculate_similarity(file_name, metadata_title)
             if similarity > best_score and similarity >= self.SIMILARITY_THRESHOLD:
                 best_score = similarity
-                best_match = hand_title
+                best_match = metadata_title
 
         if best_match:
-            return best_match, hand_data[best_match]
+            return best_match, metadata_data[best_match]
 
         return None, {}
 
@@ -526,7 +526,7 @@ class ProgressService:
         db: AsyncSession,
         folder: FolderStats,
         work_statuses: Dict[str, Dict],
-        hand_data: Dict[str, Dict],
+        metadata_data: Dict[str, Dict],
         max_depth: int,
         current_depth: int,
         include_files: bool,
@@ -680,8 +680,8 @@ class ProgressService:
         # 하위 호환성: 첫 번째 매칭만 work_status로 유지
         folder_dict["work_status"] = work_statuses_matched[0] if work_statuses_matched else None
 
-        # === metadata db: 파일 기반 Hand Analysis 집계 ===
-        files_progress = await self._get_files_with_matching(db, folder.path, hand_data, extensions)
+        # === metadata db: 파일 기반 Archive Metadata 집계 ===
+        files_progress = await self._get_files_with_matching(db, folder.path, metadata_data, extensions)
 
         # 현재 폴더의 직접 파일 통계
         direct_files_count = len(files_progress)
@@ -760,7 +760,7 @@ class ProgressService:
                 child_parent_ids.update(sibling_used_ids)
 
                 child_data, child_used_ids = await self._build_folder_progress(
-                    db, child, work_statuses, hand_data,
+                    db, child, work_statuses, metadata_data,
                     max_depth, current_depth + 1, include_files, extensions, include_codecs,
                     parent_work_status_ids=child_parent_ids,  # 상위+형제 매칭 ID 전파
                     root_stats=root_stats,  # Issue #29: 루트 통계 전달
@@ -906,10 +906,10 @@ class ProgressService:
         self,
         db: AsyncSession,
         folder_path: str,
-        hand_data: Dict[str, Dict],
+        metadata_data: Dict[str, Dict],
         extensions: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """폴더 내 파일들과 Hand Analysis 매칭"""
+        """폴더 내 파일들과 Archive Metadata 매칭"""
         query = select(FileStats).where(FileStats.folder_path == folder_path)
 
         # 확장자 필터 적용
@@ -923,7 +923,7 @@ class ProgressService:
 
         result = []
         for file in files:
-            matched_title, hand_info = self._match_file_to_hand(file.name, hand_data)
+            matched_title, metadata_info = self._match_file_to_metadata(file.name, metadata_data)
 
             file_dict = {
                 "id": file.id,
@@ -938,14 +938,14 @@ class ProgressService:
                 "video_codec": file.video_codec,
                 "audio_codec": file.audio_codec,
                 "matched_title": matched_title,
-                "hand_count": hand_info.get('hand_count', 0),
-                "max_timecode_sec": hand_info.get('max_timecode_sec', 0),
-                "max_timecode_formatted": hand_info.get('max_timecode_formatted', '00:00:00'),
+                "hand_count": metadata_info.get('hand_count', 0),
+                "max_timecode_sec": metadata_info.get('max_timecode_sec', 0),
+                "max_timecode_formatted": metadata_info.get('max_timecode_formatted', '00:00:00'),
             }
 
             # 진행률 계산
             if matched_title and file.duration and file.duration > 0:
-                progress = (hand_info.get('max_timecode_sec', 0) / file.duration) * 100
+                progress = (metadata_info.get('max_timecode_sec', 0) / file.duration) * 100
                 file_dict["progress_percent"] = min(progress, 100)
                 file_dict["is_complete"] = progress >= 90
             else:
@@ -991,7 +991,7 @@ class ProgressService:
             return None
 
         work_statuses = await self._load_work_statuses(db)
-        hand_data = await self._load_hand_analysis_data(db)
+        metadata_data = await self._load_metadata_data(db)
 
         # ⚠️ Cascading Match 방지: 상위 폴더에서 매칭된 work_status_ids 계산
         ancestor_work_status_ids = await self._get_ancestor_work_status_ids(db, folder_path, work_statuses)
@@ -1051,7 +1051,7 @@ class ProgressService:
 
         # 파일 매칭
         if include_files:
-            files_progress = await self._get_files_with_matching(db, folder.path, hand_data)
+            files_progress = await self._get_files_with_matching(db, folder.path, metadata_data)
             folder_dict["files"] = files_progress
 
             files_with_hands = sum(1 for f in files_progress if f['matched_title'])
@@ -1148,7 +1148,7 @@ class ProgressService:
 
     # === BLOCK: progress.file_detail ===
     # Description: 특정 파일의 상세 진행률 조회
-    # Dependencies: progress.file_matcher, HandAnalysis model
+    # Dependencies: progress.file_matcher, ArchiveMetadata model
     # AI Context: 개별 파일 진행률 표시 문제 시
 
     async def get_file_progress_detail(
@@ -1165,15 +1165,15 @@ class ProgressService:
         if not file:
             return None
 
-        hand_data = await self._load_hand_analysis_data(db)
-        matched_title, hand_info = self._match_file_to_hand(file.name, hand_data)
+        metadata_data = await self._load_metadata_data(db)
+        matched_title, metadata_info = self._match_file_to_metadata(file.name, metadata_data)
 
         hands = []
         if matched_title:
             hand_result = await db.execute(
-                select(HandAnalysis)
-                .where(HandAnalysis.file_name == matched_title)
-                .order_by(HandAnalysis.timecode_out_sec)
+                select(ArchiveMetadata)
+                .where(ArchiveMetadata.file_name == matched_title)
+                .order_by(ArchiveMetadata.timecode_out_sec)
             )
             hands = [
                 {
@@ -1192,7 +1192,7 @@ class ProgressService:
         progress_percent = 0
         if matched_title and file.duration and file.duration > 0:
             progress_percent = min(
-                (hand_info.get('max_timecode_sec', 0) / file.duration) * 100,
+                (metadata_info.get('max_timecode_sec', 0) / file.duration) * 100,
                 100
             )
 
@@ -1208,8 +1208,8 @@ class ProgressService:
             "hands": hands,
             "summary": {
                 "hand_count": len(hands),
-                "max_timecode_sec": hand_info.get('max_timecode_sec', 0),
-                "max_timecode_formatted": hand_info.get('max_timecode_formatted', '00:00:00'),
+                "max_timecode_sec": metadata_info.get('max_timecode_sec', 0),
+                "max_timecode_formatted": metadata_info.get('max_timecode_formatted', '00:00:00'),
                 "progress_percent": progress_percent,
                 "is_complete": progress_percent >= 90,
             }

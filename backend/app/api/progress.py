@@ -2,7 +2,7 @@
 Progress API - 폴더/파일별 통합 진행률 조회
 
 Folder Tree와 Work Progress를 통합한 간트차트 형태 데이터 제공.
-metadata db(핸드 분석)와 archive db(작업 현황)를 NAS 폴더 구조와 매칭.
+metadata db(Archive Metadata)와 archive db(작업 현황)를 NAS 폴더 구조와 매칭.
 
 Block: api.progress
 """
@@ -52,12 +52,12 @@ class WorkStatusSummary(BaseModel):
     sheets_excel_done: int = 0    # 구글 시트 excel_done 합계
 
 
-class HandAnalysisInfo(BaseModel):
-    """Hand Analysis 정보 (파일 기반 집계) - 상세 패널용"""
+class ArchiveMetadataInfo(BaseModel):
+    """Archive Metadata 정보 (파일 기반 집계) - 상세 패널용"""
     total_files: int = 0  # 전체 파일 수 (하위 폴더 포함)
     files_matched: int = 0  # 매칭된 파일 수
     match_rate: float = 0.0  # 매칭 비율 (%)
-    hand_count: int = 0
+    entry_count: int = 0  # 메타데이터 엔트리 수
     max_timecode_sec: float = 0
     max_timecode_formatted: str = "00:00:00"
     avg_progress: float = 0
@@ -125,8 +125,10 @@ class FolderWithProgress(BaseModel):
     work_summary: Optional[WorkStatusSummary] = None  # 트리 뷰용 요약
     work_statuses: Optional[List[WorkStatusInfo]] = None  # 상세 패널용 목록
 
-    # 분석 현황 (hand_analysis) - 상세 패널에서만 사용
-    hand_analysis: Optional[HandAnalysisInfo] = None
+    # 분석 현황 (archive_metadata) - 상세 패널에서만 사용
+    archive_metadata: Optional[ArchiveMetadataInfo] = None
+    # Backward compatibility alias
+    hand_analysis: Optional[ArchiveMetadataInfo] = None  # deprecated, use archive_metadata
 
     # 코덱 정보 (Codec Explorer용)
     codec_summary: Optional[FolderCodecSummary] = None
@@ -180,7 +182,7 @@ async def get_folder_tree_with_progress(
     폴더 트리 + 진행률 통합 조회 (간트차트용)
 
     - 각 폴더에 Work Status (archive db) 매칭
-    - 각 폴더에 Hand Analysis (metadata db) 집계
+    - 각 폴더에 Archive Metadata (metadata db) 집계
     - include_files=true 시 파일별 진행률 포함
     - include_codecs=true 시 폴더/파일별 코덱 정보 포함
     - extensions 필터로 특정 확장자만 포함
@@ -256,14 +258,14 @@ async def get_progress_summary(
 
     - 전체 폴더/파일 수
     - Work Status 요약 (archive db)
-    - Hand Analysis 요약 (metadata db)
+    - Archive Metadata 요약 (metadata db)
     - 매칭률 통계
     - path 필터로 특정 폴더 하위만 집계
     - extensions 필터로 특정 확장자만 집계
     """
     from sqlalchemy import func
     from app.models.file_stats import FolderStats, FileStats
-    from app.models.hand_analysis import HandAnalysis
+    from app.models.archive_metadata import ArchiveMetadata
     from app.models.work_status import WorkStatus
 
     # Parse extensions filter
@@ -314,7 +316,7 @@ async def get_progress_summary(
             select(func.count(WorkStatus.id)).where(WorkStatus.status == "completed")
         ) or 0
 
-    # Hand Analysis 통계 (파일명 기반 필터링)
+    # Archive Metadata 통계 (파일명 기반 필터링)
     if path_filter:
         # 해당 경로의 파일명 목록 조회
         file_names_query = select(FileStats.name).where(FileStats.folder_path.like(path_filter))
@@ -322,30 +324,30 @@ async def get_progress_summary(
         file_names = [r[0] for r in file_names_result.fetchall()]
 
         if file_names:
-            hand_total = await db.scalar(
-                select(func.count(HandAnalysis.id)).where(HandAnalysis.file_name.in_(file_names))
+            metadata_total = await db.scalar(
+                select(func.count(ArchiveMetadata.id)).where(ArchiveMetadata.file_name.in_(file_names))
             ) or 0
             worksheet_count = await db.scalar(
-                select(func.count(func.distinct(HandAnalysis.source_worksheet))).where(
-                    HandAnalysis.file_name.in_(file_names)
+                select(func.count(func.distinct(ArchiveMetadata.source_worksheet))).where(
+                    ArchiveMetadata.file_name.in_(file_names)
                 )
             ) or 0
             matched_files = await db.scalar(
-                select(func.count(func.distinct(HandAnalysis.file_name))).where(
-                    HandAnalysis.file_name.in_(file_names)
+                select(func.count(func.distinct(ArchiveMetadata.file_name))).where(
+                    ArchiveMetadata.file_name.in_(file_names)
                 )
             ) or 0
         else:
-            hand_total = 0
+            metadata_total = 0
             worksheet_count = 0
             matched_files = 0
     else:
-        hand_total = await db.scalar(select(func.count(HandAnalysis.id))) or 0
+        metadata_total = await db.scalar(select(func.count(ArchiveMetadata.id))) or 0
         worksheet_count = await db.scalar(
-            select(func.count(func.distinct(HandAnalysis.source_worksheet)))
+            select(func.count(func.distinct(ArchiveMetadata.source_worksheet)))
         ) or 0
         matched_files = await db.scalar(
-            select(func.count(func.distinct(HandAnalysis.file_name)))
+            select(func.count(func.distinct(ArchiveMetadata.file_name)))
         ) or 0
 
     return {
@@ -359,12 +361,12 @@ async def get_progress_summary(
             "in_progress": ws_total - ws_completed,
         },
         "metadata_db": {
-            "total_hands": hand_total,
+            "total_entries": metadata_total,
             "worksheets": worksheet_count,
             "matched_files": matched_files,
         },
         "matching": {
-            "files_with_hands": matched_files,
+            "files_with_metadata": matched_files,
             "match_rate": round((matched_files / file_count * 100), 1) if file_count > 0 else 0,
         },
         "filter": {

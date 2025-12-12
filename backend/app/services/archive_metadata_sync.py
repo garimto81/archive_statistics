@@ -1,10 +1,11 @@
 """
-Hand Analysis Google Sheets 동기화 서비스
+Archive Metadata Google Sheets 동기화 서비스
 
-Source of Truth: Google Sheets (WSOP Circuit LA - 8개 워크시트)
-Target: hand_analyses 테이블
+Source of Truth: Google Sheets (타임코드 메타데이터)
+Target: archive_metadata 테이블
 
-Block: sync.hands
+Block: sync.metadata
+Note: Renamed from HandAnalysisSyncService (Issue #36)
 """
 import logging
 import json
@@ -22,13 +23,13 @@ from sqlalchemy import select, delete
 
 from app.core.config import settings
 from app.core.database import async_session_maker
-from app.models.hand_analysis import HandAnalysis
+from app.models.archive_metadata import ArchiveMetadata
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class HandSyncResult:
+class MetadataSyncResult:
     """동기화 결과"""
     success: bool
     synced_at: datetime
@@ -41,11 +42,11 @@ class HandSyncResult:
     details: List[str] = field(default_factory=list)
 
 
-class HandAnalysisSyncService:
+class ArchiveMetadataSyncService:
     """
-    Hand Analysis Google Sheets 동기화 서비스
+    Archive Metadata Google Sheets 동기화 서비스
 
-    - 8개 워크시트 순회
+    - 여러 워크시트 순회
     - 헤더 위치 자동 감지 (Row 1 or Row 3)
     - 타임코드 파싱 (HH:MM:SS → 초)
     - 태그 JSON 변환
@@ -64,17 +65,19 @@ class HandAnalysisSyncService:
         'in': 'timecode_in',
         'out': 'timecode_out',
         'hand grade': 'hand_grade',
+        'entry grade': 'hand_grade',
         'grade': 'hand_grade',
         'winner': 'winner',
         'hands': 'hands',
         'hand': 'hands',
+        'description': 'hands',
     }
 
     def __init__(self):
         self.scheduler = AsyncIOScheduler()
         self._client: Optional[gspread.Client] = None
         self.last_sync_time: Optional[datetime] = None
-        self.last_sync_result: Optional[HandSyncResult] = None
+        self.last_sync_result: Optional[MetadataSyncResult] = None
         self.last_error: Optional[str] = None
         self.status: str = "idle"
         self._is_started: bool = False
@@ -82,22 +85,22 @@ class HandAnalysisSyncService:
     @property
     def next_sync_time(self) -> Optional[datetime]:
         """다음 동기화 예정 시간"""
-        job = self.scheduler.get_job('hand_analysis_sync')
+        job = self.scheduler.get_job('archive_metadata_sync')
         return job.next_run_time if job else None
 
     @property
     def is_enabled(self) -> bool:
         """동기화 활성화 여부"""
-        return settings.HAND_ANALYSIS_SYNC_ENABLED and bool(settings.HAND_ANALYSIS_SHEET_URL)
+        return settings.ARCHIVE_METADATA_SYNC_ENABLED and bool(settings.ARCHIVE_METADATA_SHEET_URL)
 
     async def start(self):
         """동기화 서비스 시작"""
         if self._is_started:
-            logger.warning("Hand analysis sync service already started")
+            logger.warning("Archive metadata sync service already started")
             return
 
         if not self.is_enabled:
-            logger.info("Hand analysis sync disabled - skipping startup")
+            logger.info("Archive metadata sync disabled - skipping startup")
             return
 
         try:
@@ -105,13 +108,13 @@ class HandAnalysisSyncService:
                 self._sync_wrapper,
                 'interval',
                 minutes=settings.SHEETS_SYNC_INTERVAL_MINUTES,
-                id='hand_analysis_sync',
+                id='archive_metadata_sync',
                 replace_existing=True,
             )
             self.scheduler.start()
             self._is_started = True
             logger.info(
-                f"Hand analysis sync scheduler started "
+                f"Archive metadata sync scheduler started "
                 f"(interval: {settings.SHEETS_SYNC_INTERVAL_MINUTES}m)"
             )
 
@@ -119,7 +122,7 @@ class HandAnalysisSyncService:
             await self._sync_wrapper()
 
         except Exception as e:
-            logger.exception(f"Failed to start hand analysis sync service: {e}")
+            logger.exception(f"Failed to start archive metadata sync service: {e}")
             self.status = "error"
             self.last_error = str(e)
 
@@ -128,7 +131,7 @@ class HandAnalysisSyncService:
         if self.scheduler.running:
             self.scheduler.shutdown()
             self._is_started = False
-            logger.info("Hand analysis sync scheduler stopped")
+            logger.info("Archive metadata sync scheduler stopped")
 
     def _get_client(self) -> gspread.Client:
         """Google Sheets 클라이언트 획득 (lazy initialization)"""
@@ -165,18 +168,18 @@ class HandAnalysisSyncService:
         try:
             await self.sync()
         except Exception as e:
-            logger.exception(f"Hand analysis sync failed: {e}")
+            logger.exception(f"Archive metadata sync failed: {e}")
             self.last_error = str(e)
             self.status = "error"
 
-    async def sync(self) -> HandSyncResult:
-        """Google Sheets에서 핸드 데이터 동기화"""
+    async def sync(self) -> MetadataSyncResult:
+        """Google Sheets에서 메타데이터 동기화"""
         self.status = "syncing"
-        logger.info("Starting hand analysis sync...")
+        logger.info("Starting archive metadata sync...")
 
         try:
             client = self._get_client()
-            sheet = client.open_by_url(settings.HAND_ANALYSIS_SHEET_URL)
+            sheet = client.open_by_url(settings.ARCHIVE_METADATA_SHEET_URL)
             worksheets = sheet.worksheets()
 
             logger.info(f"Found {len(worksheets)} worksheets")
@@ -199,7 +202,7 @@ class HandAnalysisSyncService:
 
                 await db.commit()
 
-            result = HandSyncResult(
+            result = MetadataSyncResult(
                 success=True,
                 synced_at=datetime.now(),
                 total_records=total_records,
@@ -216,7 +219,7 @@ class HandAnalysisSyncService:
             self.status = "idle"
 
             logger.info(
-                f"Hand analysis sync completed: {synced_count}/{total_records} records "
+                f"Archive metadata sync completed: {synced_count}/{total_records} records "
                 f"from {len(worksheets)} worksheets "
                 f"(created: {created_count}, updated: {updated_count})"
             )
@@ -227,7 +230,7 @@ class HandAnalysisSyncService:
             logger.error(error_msg)
             self.last_error = error_msg
             self.status = "error"
-            return HandSyncResult(
+            return MetadataSyncResult(
                 success=False,
                 synced_at=datetime.now(),
                 total_records=0,
@@ -236,11 +239,11 @@ class HandAnalysisSyncService:
             )
 
         except Exception as e:
-            error_msg = f"Hand analysis sync error: {e}"
+            error_msg = f"Archive metadata sync error: {e}"
             logger.exception(error_msg)
             self.last_error = str(e)
             self.status = "error"
-            return HandSyncResult(
+            return MetadataSyncResult(
                 success=False,
                 synced_at=datetime.now(),
                 total_records=0,
@@ -286,10 +289,10 @@ class HandAnalysisSyncService:
 
                     # Upsert (file_name + source_worksheet + file_no로 unique 판단)
                     result = await db.execute(
-                        select(HandAnalysis).where(
-                            HandAnalysis.file_name == record['file_name'],
-                            HandAnalysis.source_worksheet == ws_title,
-                            HandAnalysis.file_no == record.get('file_no'),
+                        select(ArchiveMetadata).where(
+                            ArchiveMetadata.file_name == record['file_name'],
+                            ArchiveMetadata.source_worksheet == ws_title,
+                            ArchiveMetadata.file_no == record.get('file_no'),
                         )
                     )
                     existing = result.scalar_one_or_none()
@@ -301,8 +304,8 @@ class HandAnalysisSyncService:
                         updated += 1
                     else:
                         # 신규 추가
-                        new_hand = HandAnalysis(**record)
-                        db.add(new_hand)
+                        new_metadata = ArchiveMetadata(**record)
+                        db.add(new_metadata)
                         created += 1
 
                     synced += 1
@@ -379,7 +382,7 @@ class HandAnalysisSyncService:
         if not timecode_in and not timecode_out:
             return None  # 타임코드 없으면 스킵
 
-        # 플레이어 태그 수집
+        # 태그 수집
         player_tags = []
         poker_play_tags = []
 
@@ -467,4 +470,8 @@ class HandAnalysisSyncService:
 
 
 # 싱글톤 인스턴스
-hand_analysis_sync_service = HandAnalysisSyncService()
+archive_metadata_sync_service = ArchiveMetadataSyncService()
+
+# Backward compatibility alias (deprecated)
+hand_analysis_sync_service = archive_metadata_sync_service
+HandAnalysisSyncService = ArchiveMetadataSyncService

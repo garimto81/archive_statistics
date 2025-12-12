@@ -45,9 +45,9 @@ class Settings(BaseSettings):
     # Work Status Sheet (Sheet 3)
     WORK_STATUS_SHEET_URL: str = "https://docs.google.com/spreadsheets/d/1xuN4_1mQME_SVwnI7445JuLd8K7tRS9HDNYYJi2fm2k"
 
-    # Hand Analysis Sheet (WSOP Circuit LA - 8 worksheets)
-    HAND_ANALYSIS_SYNC_ENABLED: bool = True
-    HAND_ANALYSIS_SHEET_URL: str = "https://docs.google.com/spreadsheets/d/1_RN_W_ZQclSZA0Iez6XniCXVtjkkd5HNZwiT6l-z6d4"
+    # Archive Metadata Sheet (타임코드 메타데이터)
+    ARCHIVE_METADATA_SYNC_ENABLED: bool = True
+    ARCHIVE_METADATA_SHEET_URL: str = "https://docs.google.com/spreadsheets/d/1_RN_W_ZQclSZA0Iez6XniCXVtjkkd5HNZwiT6l-z6d4"
 
     # Scanner Settings
     # 모든 파일 스캔 (윈도우 탐색기와 동일한 결과)

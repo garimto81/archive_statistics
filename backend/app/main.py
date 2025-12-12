@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.core.database import create_tables
 from app.api import api_router
 from app.services.sheets_sync import sheets_sync_service
-from app.services.hand_analysis_sync import hand_analysis_sync_service
+from app.services.archive_metadata_sync import archive_metadata_sync_service
 
 
 @asynccontextmanager
@@ -23,10 +23,10 @@ async def lifespan(app: FastAPI):
         print("📊 Starting Google Sheets sync service...")
         await sheets_sync_service.start()
 
-    # Start Hand Analysis sync service
-    if settings.HAND_ANALYSIS_SYNC_ENABLED:
-        print("🃏 Starting Hand Analysis sync service...")
-        await hand_analysis_sync_service.start()
+    # Start Archive Metadata sync service
+    if settings.ARCHIVE_METADATA_SYNC_ENABLED:
+        print("📋 Starting Archive Metadata sync service...")
+        await archive_metadata_sync_service.start()
 
     yield
 
@@ -34,9 +34,9 @@ async def lifespan(app: FastAPI):
     if settings.SHEETS_SYNC_ENABLED:
         await sheets_sync_service.stop()
         print("📊 Google Sheets sync service stopped")
-    if settings.HAND_ANALYSIS_SYNC_ENABLED:
-        await hand_analysis_sync_service.stop()
-        print("🃏 Hand Analysis sync service stopped")
+    if settings.ARCHIVE_METADATA_SYNC_ENABLED:
+        await archive_metadata_sync_service.stop()
+        print("📋 Archive Metadata sync service stopped")
     print("👋 Application shutting down")
 
 

@@ -36,7 +36,7 @@
 │  - FolderStats    │               │  - 비디오 파일       │
 │  - FileStats      │               │  - ffprobe 메타데이터│
 │  - WorkStatus     │               └──────────────────────┘
-│  - HandAnalysis   │
+│  - ArchiveMetadata│
 └───────────────────┘
 ```
 
@@ -54,7 +54,7 @@
 | `/api/work-status` | GET | 아카이빙 작업 현황 |
 | `/api/sync/status` | GET | Google Sheets 동기화 상태 |
 | `/api/sync/trigger` | POST | 수동 동기화 트리거 |
-| `/api/hands` | GET | Hand Analysis 데이터 |
+| `/api/metadata` | GET | Archive Metadata 데이터 |
 | `/api/data-sources` | GET | 데이터 소스 상태 |
 | `/api/worker-stats` | GET | 작업자별 통계 |
 
@@ -135,11 +135,11 @@ backend/app/
 │   ├── progress_service.py  # 매칭 로직 (핵심)
 │   ├── scanner.py           # NAS 스캔 + ffprobe
 │   ├── sheets_sync.py       # Sheets API 연동
-│   └── hand_analysis_sync.py
+│   └── archive_metadata_sync.py
 ├── models/
 │   ├── file_stats.py        # FileStats, FolderStats
 │   ├── work_status.py       # WorkStatus
-│   └── hand_analysis.py     # HandAnalysis
+│   └── archive_metadata.py  # ArchiveMetadata
 ├── schemas/
 │   ├── stats.py
 │   ├── work_status.py

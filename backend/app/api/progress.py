@@ -6,6 +6,7 @@ metadata db(핸드 분석)와 archive db(작업 현황)를 NAS 폴더 구조와 
 
 Block: api.progress
 """
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
@@ -19,8 +20,10 @@ router = APIRouter()
 
 # ==================== Schemas ====================
 
+
 class WorkStatusInfo(BaseModel):
     """Work Status 정보 (archive db) - 구글 시트 원본 행 전체"""
+
     id: int
     category: str
     pic: Optional[str]
@@ -42,18 +45,35 @@ class WorkStatusSummary(BaseModel):
     - total_files는 NAS 스캔 결과 (진행률 계산 기준)
     - sheets_total_videos는 구글 시트 원본 값 (검증용)
     - 90% 이상 진행률은 100%로 표시
+
+    PRD-0041 확장 필드:
+    - actual_progress: 시트 기준 실제 진행률
+    - data_source_mismatch: 10% 이상 데이터 불일치
+    - mismatch_count: 파일 수 차이
+    - is_complete: 100% 완료 여부 (done == total == nas_files)
+    - matching_method: 매칭 방법 (exact, prefix, word 등)
+    - matching_score: 매칭 신뢰도 점수 (0.0-1.0)
     """
-    task_count: int = 0           # 매칭된 작업 수
-    total_files: int = 0          # NAS 파일 수 (스캔 결과, 진행률 계산 기준)
-    total_done: int = 0           # 완료 파일 수 (excel_done 합산)
+
+    task_count: int = 0  # 매칭된 작업 수
+    total_files: int = 0  # NAS 파일 수 (스캔 결과, 진행률 계산 기준)
+    total_done: int = 0  # 완료 파일 수 (excel_done 합산)
     combined_progress: float = 0  # 전체 진행률 (90% 이상은 100%)
     # 구글 시트 원본 값 (검증용)
     sheets_total_videos: int = 0  # 구글 시트 total_videos 합계
-    sheets_excel_done: int = 0    # 구글 시트 excel_done 합계
+    sheets_excel_done: int = 0  # 구글 시트 excel_done 합계
+    # PRD-0041: 검증 및 진행률 확장 필드
+    actual_progress: float = 0.0  # 시트 기준 실제 진행률 (excel_done / total_videos)
+    data_source_mismatch: bool = False  # 10% 이상 데이터 불일치 여부
+    mismatch_count: int = 0  # 파일 수 차이 (양수: 시트多, 음수: NAS多)
+    is_complete: bool = False  # 100% 완료 여부 (done == total == nas_files)
+    matching_method: Optional[str] = None  # 매칭 방법 (exact, prefix, word 등)
+    matching_score: Optional[float] = None  # 매칭 신뢰도 점수 (0.0-1.0)
 
 
 class HandAnalysisInfo(BaseModel):
     """Hand Analysis 정보 (파일 기반 집계) - 상세 패널용"""
+
     total_files: int = 0  # 전체 파일 수 (하위 폴더 포함)
     files_matched: int = 0  # 매칭된 파일 수
     match_rate: float = 0.0  # 매칭 비율 (%)
@@ -66,6 +86,7 @@ class HandAnalysisInfo(BaseModel):
 
 class MetadataProgress(BaseModel):
     """파일별 metadata 진행률"""
+
     hand_count: int
     max_timecode_sec: float
     max_timecode_formatted: str
@@ -75,6 +96,7 @@ class MetadataProgress(BaseModel):
 
 class FolderCodecSummary(BaseModel):
     """폴더별 코덱 요약 통계"""
+
     total_files: int = 0
     files_with_codec: int = 0
     video_codecs: dict = {}  # {"h264": 10, "hevc": 5}
@@ -85,6 +107,7 @@ class FolderCodecSummary(BaseModel):
 
 class FileWithProgress(BaseModel):
     """파일 + 진행률"""
+
     id: int
     name: str
     path: str
@@ -101,6 +124,7 @@ class FileWithProgress(BaseModel):
 
 class FolderRootStats(BaseModel):
     """폴더의 루트 전체 대비 비율 (Issue #29)"""
+
     total_files: int = 0
     total_size: int = 0
     total_size_formatted: str = "0 B"
@@ -110,6 +134,7 @@ class FolderRootStats(BaseModel):
 
 class FolderWithProgress(BaseModel):
     """폴더 + 진행률 (재귀 구조)"""
+
     id: int
     name: str
     path: str
@@ -146,6 +171,7 @@ class FolderWithProgress(BaseModel):
 
 class RootStats(BaseModel):
     """전체 아카이브 통계 (Issue #29)"""
+
     total_files: int = 0
     total_size: int = 0
     total_size_formatted: str = "0 B"
@@ -157,6 +183,7 @@ class RootStats(BaseModel):
 
 class TreeWithRootStats(BaseModel):
     """폴더 트리 + 루트 통계 (Issue #29)"""
+
     tree: List[FolderWithProgress] = []
     root_stats: RootStats
 
@@ -167,13 +194,18 @@ FolderWithProgress.model_rebuild()
 
 # ==================== Endpoints ====================
 
+
 @router.get("/tree", response_model=TreeWithRootStats)
 async def get_folder_tree_with_progress(
     path: Optional[str] = Query(None, description="시작 경로 (None=루트)"),
     depth: int = Query(2, ge=1, le=10, description="탐색 깊이 (1-10)"),
     include_files: bool = Query(False, description="파일 목록 포함"),
-    include_codecs: bool = Query(False, description="코덱 정보 포함 (Codec Explorer용)"),
-    extensions: Optional[str] = Query(None, description="쉼표로 구분된 확장자 필터 (예: mp4,mkv)"),
+    include_codecs: bool = Query(
+        False, description="코덱 정보 포함 (Codec Explorer용)"
+    ),
+    extensions: Optional[str] = Query(
+        None, description="쉼표로 구분된 확장자 필터 (예: mp4,mkv)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -248,7 +280,9 @@ async def get_file_progress_detail(
 @router.get("/summary")
 async def get_progress_summary(
     path: Optional[str] = Query(None, description="폴더 경로 필터 (None=전체)"),
-    extensions: Optional[str] = Query(None, description="쉼표로 구분된 확장자 필터 (예: mp4,mkv)"),
+    extensions: Optional[str] = Query(
+        None, description="쉼표로 구분된 확장자 필터 (예: mp4,mkv)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -299,54 +333,79 @@ async def get_progress_summary(
                 WorkStatus.category.ilike(f"%{folder_name}%")
             )
             ws_total = await db.scalar(ws_query) or 0
-            ws_completed = await db.scalar(
-                select(func.count(WorkStatus.id)).where(
-                    WorkStatus.category.ilike(f"%{folder_name}%"),
-                    WorkStatus.status == "completed"
+            ws_completed = (
+                await db.scalar(
+                    select(func.count(WorkStatus.id)).where(
+                        WorkStatus.category.ilike(f"%{folder_name}%"),
+                        WorkStatus.status == "completed",
+                    )
                 )
-            ) or 0
+                or 0
+            )
         else:
             ws_total = 0
             ws_completed = 0
     else:
         ws_total = await db.scalar(select(func.count(WorkStatus.id))) or 0
-        ws_completed = await db.scalar(
-            select(func.count(WorkStatus.id)).where(WorkStatus.status == "completed")
-        ) or 0
+        ws_completed = (
+            await db.scalar(
+                select(func.count(WorkStatus.id)).where(
+                    WorkStatus.status == "completed"
+                )
+            )
+            or 0
+        )
 
     # Hand Analysis 통계 (파일명 기반 필터링)
     if path_filter:
         # 해당 경로의 파일명 목록 조회
-        file_names_query = select(FileStats.name).where(FileStats.folder_path.like(path_filter))
+        file_names_query = select(FileStats.name).where(
+            FileStats.folder_path.like(path_filter)
+        )
         file_names_result = await db.execute(file_names_query)
         file_names = [r[0] for r in file_names_result.fetchall()]
 
         if file_names:
-            hand_total = await db.scalar(
-                select(func.count(HandAnalysis.id)).where(HandAnalysis.file_name.in_(file_names))
-            ) or 0
-            worksheet_count = await db.scalar(
-                select(func.count(func.distinct(HandAnalysis.source_worksheet))).where(
-                    HandAnalysis.file_name.in_(file_names)
+            hand_total = (
+                await db.scalar(
+                    select(func.count(HandAnalysis.id)).where(
+                        HandAnalysis.file_name.in_(file_names)
+                    )
                 )
-            ) or 0
-            matched_files = await db.scalar(
-                select(func.count(func.distinct(HandAnalysis.file_name))).where(
-                    HandAnalysis.file_name.in_(file_names)
+                or 0
+            )
+            worksheet_count = (
+                await db.scalar(
+                    select(
+                        func.count(func.distinct(HandAnalysis.source_worksheet))
+                    ).where(HandAnalysis.file_name.in_(file_names))
                 )
-            ) or 0
+                or 0
+            )
+            matched_files = (
+                await db.scalar(
+                    select(func.count(func.distinct(HandAnalysis.file_name))).where(
+                        HandAnalysis.file_name.in_(file_names)
+                    )
+                )
+                or 0
+            )
         else:
             hand_total = 0
             worksheet_count = 0
             matched_files = 0
     else:
         hand_total = await db.scalar(select(func.count(HandAnalysis.id))) or 0
-        worksheet_count = await db.scalar(
-            select(func.count(func.distinct(HandAnalysis.source_worksheet)))
-        ) or 0
-        matched_files = await db.scalar(
-            select(func.count(func.distinct(HandAnalysis.file_name)))
-        ) or 0
+        worksheet_count = (
+            await db.scalar(
+                select(func.count(func.distinct(HandAnalysis.source_worksheet)))
+            )
+            or 0
+        )
+        matched_files = (
+            await db.scalar(select(func.count(func.distinct(HandAnalysis.file_name))))
+            or 0
+        )
 
     return {
         "nas": {
@@ -365,12 +424,14 @@ async def get_progress_summary(
         },
         "matching": {
             "files_with_hands": matched_files,
-            "match_rate": round((matched_files / file_count * 100), 1) if file_count > 0 else 0,
+            "match_rate": (
+                round((matched_files / file_count * 100), 1) if file_count > 0 else 0
+            ),
         },
         "filter": {
             "path": path,
             "extensions": ext_list,
-        }
+        },
     }
 
 

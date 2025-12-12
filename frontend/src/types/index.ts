@@ -252,6 +252,11 @@ export interface HandAnalysisSummary {
 /**
  * WorkSummary - 폴더별 작업 진행률 요약
  * Backend progress_service.py에서 생성되며, 하이어라키 합산값을 포함
+ *
+ * PRD-0041 확장 필드:
+ * - is_complete: 100% 완료 여부 (done == total == nas_files)
+ * - matching_method: 매칭 방법 (exact, prefix, word 등)
+ * - matching_score: 매칭 신뢰도 점수 (0.0-1.0)
  */
 export interface WorkSummary {
   task_count: number;           // 직접 매칭된 작업 수
@@ -260,9 +265,13 @@ export interface WorkSummary {
   combined_progress: number;    // NAS 기준 진행률 (90%+ = 100%)
   sheets_total_videos: number;  // 구글 시트 total_videos
   sheets_excel_done: number;    // 구글 시트 excel_done
-  actual_progress?: number;     // 시트 기준 진행률 (optional)
+  actual_progress?: number;     // 시트 기준 진행률
   data_source_mismatch?: boolean; // NAS vs 시트 불일치 여부
   mismatch_count?: number;      // 차이값
+  // PRD-0041 확장 필드
+  is_complete?: boolean;        // 100% 완료 여부 (done == total == nas_files)
+  matching_method?: string;     // 매칭 방법 (exact, prefix, word 등)
+  matching_score?: number;      // 매칭 신뢰도 점수 (0.0-1.0)
 }
 
 export interface WorkStatusInfo {

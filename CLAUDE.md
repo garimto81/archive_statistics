@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Version**: 1.32.0 | **Last Updated**: 2025-12-12
+**Version**: 1.33.0 | **Last Updated**: 2025-12-12
 
 ## Project Overview
 
@@ -131,6 +131,7 @@ Backend (FastAPI + SQLAlchemy + aiosqlite)
 
 | 버전 | 날짜 | 변경 |
 |------|------|------|
+| 1.33.0 | 2025-12-12 | progress.validator 블록 추가 (PRD-0041 Phase 1, #42) |
 | 1.32.0 | 2025-12-12 | WorkStatus 기본 탭 Workers로 변경 (#40) |
 | 1.31.0 | 2025-12-12 | CLAUDE.md 개선: Quick Reference 확장, Block Agent System 추가 |
 | 1.30.0 | 2025-12-12 | MasterFolderTree 통합 컴포넌트 (#34), 레거시 정리 |

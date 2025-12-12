@@ -11,6 +11,14 @@ from app.schemas.work_status import (
     ArchiveResponse,
 )
 from app.schemas.scan import ScanStatus, ScanHistoryResponse
+from app.schemas.folder_stats_v2 import (
+    FileCountInfo,
+    SizeInfo,
+    DurationInfo,
+    ArchiveStats,
+    FolderRatioInfo,
+    FolderStatsV2,
+)
 
 __all__ = [
     "StatsSummary",
@@ -23,4 +31,11 @@ __all__ = [
     "ArchiveResponse",
     "ScanStatus",
     "ScanHistoryResponse",
+    # V2 Folder Stats (Issue #49)
+    "FileCountInfo",
+    "SizeInfo",
+    "DurationInfo",
+    "ArchiveStats",
+    "FolderRatioInfo",
+    "FolderStatsV2",
 ]

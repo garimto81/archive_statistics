@@ -157,7 +157,17 @@ class FolderWithProgress(BaseModel):
     codec_summary: Optional[FolderCodecSummary] = None
 
     # Issue #29: 루트 전체 대비 비율 (NAS/Sheets 데이터 분리 표시용)
-    root_stats: Optional[FolderRootStats] = None
+    root_stats: Optional[FolderRootStats] = None  # deprecated: archive_stats 사용 권장
+
+    # Issue #49: 전체 아카이브 통계 (항상 일관된 값)
+    archive_stats: Optional["ArchiveStats"] = None
+
+    # extensions 필터 적용 시 필터링된 파일 수/용량 (v1.35.0)
+    filtered_file_count: Optional[int] = None
+    filtered_size: Optional[int] = None
+    filtered_size_formatted: Optional[str] = None
+    filtered_duration: Optional[float] = None
+    filtered_duration_formatted: Optional[str] = None
 
     # 하위 호환성
     work_status: Optional[WorkStatusInfo] = None  # deprecated
@@ -181,11 +191,33 @@ class RootStats(BaseModel):
     sheets_total_done: int = 0
 
 
+class ArchiveStats(BaseModel):
+    """전체 아카이브 통계 V2 (Issue #49)
+
+    핵심 특징:
+    - path 파라미터와 무관하게 항상 동일한 값 반환
+    - Lazy Load 시에도 일관성 보장
+    - root_stats와의 차이: root_stats는 path에 따라 값이 달라질 수 있음 (deprecated)
+    """
+
+    total_files: int = 0
+    total_size: int = 0
+    total_size_formatted: str = "0 B"
+    total_duration: float = 0
+    total_duration_formatted: str = "0:00:00"
+    sheets_total_videos: int = 0
+    sheets_total_done: int = 0
+    # 비율 필드 (개별 폴더 응답에서 사용)
+    file_ratio: Optional[float] = None
+    size_ratio: Optional[float] = None
+
+
 class TreeWithRootStats(BaseModel):
-    """폴더 트리 + 루트 통계 (Issue #29)"""
+    """폴더 트리 + 루트 통계 (Issue #29, #49)"""
 
     tree: List[FolderWithProgress] = []
-    root_stats: RootStats
+    root_stats: RootStats  # deprecated: archive_stats 사용 권장
+    archive_stats: Optional[ArchiveStats] = None  # Issue #49: 항상 일관된 통계
 
 
 # Forward reference 해결
@@ -206,6 +238,9 @@ async def get_folder_tree_with_progress(
     extensions: Optional[str] = Query(
         None, description="쉼표로 구분된 확장자 필터 (예: mp4,mkv)"
     ),
+    include_hidden: bool = Query(
+        False, description="숨김 파일/폴더 포함 (v1.29.0)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -216,6 +251,7 @@ async def get_folder_tree_with_progress(
     - include_files=true 시 파일별 진행률 포함
     - include_codecs=true 시 폴더/파일별 코덱 정보 포함
     - extensions 필터로 특정 확장자만 포함
+    - include_hidden=true 시 숨김 파일/폴더 포함 (v1.29.0)
     - Issue #29: root_stats로 전체 통계 반환 (NAS/Sheets 데이터 분리 표시용)
 
     Returns:
@@ -227,7 +263,7 @@ async def get_folder_tree_with_progress(
         ext_list = [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",")]
 
     result = await progress_service.get_folder_with_progress(
-        db, path, depth, include_files, ext_list, include_codecs
+        db, path, depth, include_files, ext_list, include_codecs, include_hidden
     )
     return result
 

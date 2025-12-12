@@ -10,17 +10,18 @@ Progress Service - 통합 진행률 계산
 === BLOCK INDEX ===
 | Block ID                | Lines     | Description              |
 |-------------------------|-----------|--------------------------|
-| progress.utils          | 38-71     | 정규화/유사도 헬퍼 함수  |
-| progress.root_stats     | 160-238   | 루트 전체 통계 계산      |
-| progress.data_loader    | 241-294   | DB 데이터 로드           |
-| progress.ancestor_matcher| 296-348  | 상위 폴더 매칭 ID 계산   |
-| progress.matcher        | 351-474   | 폴더-카테고리 매칭       |
-| progress.validator      | 478-559   | 매칭 검증/진행률 계산 ⭐ |
-| progress.file_matcher   | 561-610   | 파일-핸드 매칭           |
-| progress.aggregator     | 612-998   | 하이어라키 합산/코덱집계 |
-| progress.file_query     | 1000-1071 | 파일 목록 조회           |
-| progress.folder_detail  | 1073-1247 | 폴더 상세 조회           |
-| progress.file_detail    | 1249-1318 | 파일 상세 조회           |
+| progress.utils          | 43-76     | 정규화/유사도 헬퍼 함수  |
+| progress.root_stats     | 185-264   | 루트 전체 통계 (deprecated)|
+| progress.archive_stats  | 266-362   | 아카이브 통계 (Issue #49) ⭐|
+| progress.data_loader    | 364-417   | DB 데이터 로드           |
+| progress.ancestor_matcher| 419-471  | 상위 폴더 매칭 ID 계산   |
+| progress.matcher        | 474-597   | 폴더-카테고리 매칭       |
+| progress.validator      | 601-682   | 매칭 검증/진행률 계산 ⭐ |
+| progress.file_matcher   | 684-733   | 파일-핸드 매칭           |
+| progress.aggregator     | 735-1121  | 하이어라키 합산/코덱집계 |
+| progress.file_query     | 1123-1194 | 파일 목록 조회           |
+| progress.folder_detail  | 1196-1370 | 폴더 상세 조회           |
+| progress.file_detail    | 1372-1441 | 파일 상세 조회           |
 ===================
 """
 
@@ -99,6 +100,7 @@ class ProgressService:
         include_files: bool = False,
         extensions: Optional[List[str]] = None,
         include_codecs: bool = False,
+        include_hidden: bool = False,
     ) -> Dict[str, Any]:
         """
         폴더 트리와 진행률 정보를 함께 반환
@@ -110,6 +112,7 @@ class ProgressService:
             include_files: 파일 목록 포함 여부
             extensions: 확장자 필터 목록 (예: ['.mp4', '.mkv'])
             include_codecs: 코덱 정보 포함 여부
+            include_hidden: 숨김 파일/폴더 포함 여부 (v1.29.0)
 
         Returns:
             Dict with 'tree' (폴더 목록) and 'root_stats' (전체 통계)
@@ -123,8 +126,13 @@ class ProgressService:
         logger.info(f"Loaded {len(hand_data)} unique file titles from metadata db")
 
         # Step 3: 루트 전체 통계 계산 (Issue #29: NAS/Sheets 데이터 분리 표시용)
+        # 기존 root_stats (deprecated, 하위 호환성 유지)
         root_stats = await self._calculate_root_stats(db, path, extensions)
         logger.info(f"Root stats: {root_stats}")
+
+        # Issue #49: archive_stats (새로운 일관된 통계)
+        archive_stats = await self._calculate_archive_stats(db)
+        logger.info(f"Archive stats (Issue #49): total_files={archive_stats['total_files']}")
 
         # Step 4: 폴더 트리 구축
         if path:
@@ -153,6 +161,10 @@ class ProgressService:
         root_sibling_used_ids: Set[int] = ancestor_work_status_ids.copy()
 
         for folder in folders:
+            # v1.29.0: 숨김 폴더 필터링 (이름이 .으로 시작)
+            if not include_hidden and folder.name.startswith('.'):
+                continue
+
             folder_data, folder_used_ids = await self._build_folder_progress(
                 db,
                 folder,
@@ -164,7 +176,9 @@ class ProgressService:
                 extensions,
                 include_codecs,
                 parent_work_status_ids=root_sibling_used_ids.copy(),  # 조상+이전형제 ID 전달
-                root_stats=root_stats,  # 루트 통계 전달
+                root_stats=root_stats,  # 루트 통계 전달 (deprecated)
+                archive_stats=archive_stats,  # Issue #49: 일관된 통계 전달
+                include_hidden=include_hidden,  # v1.29.0: 숨김 필터 전달
             )
             tree.append(folder_data)
             # 이 폴더와 하위에서 사용된 ID를 다음 형제에게 전파
@@ -172,7 +186,8 @@ class ProgressService:
 
         return {
             "tree": tree,
-            "root_stats": root_stats,
+            "root_stats": root_stats,  # deprecated, 하위 호환성 유지
+            "archive_stats": archive_stats,  # Issue #49: 항상 일관된 통계
         }
 
     # === BLOCK: progress.root_stats ===
@@ -255,6 +270,104 @@ class ProgressService:
         }
 
     # === END BLOCK: progress.root_stats ===
+
+    # === BLOCK: progress.archive_stats ===
+    # Description: 전체 아카이브 통계 계산 (Issue #49: 일관성 보장)
+    # Dependencies: FolderStats, FileStats, WorkStatus
+    # AI Context: Lazy Load 시에도 항상 동일한 값 반환
+
+    # 클래스 레벨 캐시 (Issue #49: 캐싱 전략)
+    _archive_stats_cache: Dict[str, Any] = {}
+    _archive_stats_cached_at: Optional[float] = None
+    _CACHE_TTL_SECONDS: int = 300  # 5분
+
+    async def _calculate_archive_stats(self, db: AsyncSession) -> Dict[str, Any]:
+        """전체 아카이브 통계 계산 (Issue #49: path 무관, 항상 동일)
+
+        핵심 변경 (vs _calculate_root_stats):
+        - path 파라미터 제거
+        - 항상 depth=0 폴더들의 합계 반환
+        - 캐싱 적용 (5분 TTL)
+
+        Returns:
+            {
+                "total_files": 전체 파일 수 (항상 고정),
+                "total_size": 전체 용량,
+                "total_size_formatted": 포맷된 용량,
+                "total_duration": 전체 재생시간,
+                "total_duration_formatted": 포맷된 재생시간,
+                "sheets_total_videos": Sheets 전체 비디오 수,
+                "sheets_total_done": Sheets 완료 비디오 수,
+            }
+        """
+        import time
+
+        # 캐시 히트 체크
+        if self._is_archive_stats_cache_valid():
+            logger.debug("archive_stats cache hit")
+            return self._archive_stats_cache
+
+        logger.info("archive_stats cache miss - calculating from DB")
+
+        # 항상 전체 ARCHIVE 통계 (path 무관)
+        stats_query = select(
+            func.sum(FolderStats.file_count),
+            func.sum(FolderStats.total_size),
+            func.sum(FolderStats.total_duration),
+        ).where(FolderStats.depth == 0)
+
+        stats_result = await db.execute(stats_query)
+        row = stats_result.fetchone()
+        total_files = row[0] or 0
+        total_size = row[1] or 0
+        total_duration = row[2] or 0
+
+        # Sheets 전체 통계
+        sheets_query = select(
+            func.sum(WorkStatus.total_videos),
+            func.sum(WorkStatus.excel_done),
+        )
+        sheets_result = await db.execute(sheets_query)
+        sheets_row = sheets_result.fetchone()
+        sheets_total_videos = sheets_row[0] or 0
+        sheets_total_done = sheets_row[1] or 0
+
+        # 결과 생성
+        result = {
+            "total_files": total_files,
+            "total_size": total_size,
+            "total_size_formatted": format_size(total_size),
+            "total_duration": total_duration,
+            "total_duration_formatted": format_duration(total_duration),
+            "sheets_total_videos": sheets_total_videos,
+            "sheets_total_done": sheets_total_done,
+        }
+
+        # 캐시 저장
+        self._archive_stats_cache = result
+        self._archive_stats_cached_at = time.time()
+
+        return result
+
+    def _is_archive_stats_cache_valid(self) -> bool:
+        """캐시 유효성 검사"""
+        import time
+
+        if not self._archive_stats_cache:
+            return False
+        if self._archive_stats_cached_at is None:
+            return False
+
+        elapsed = time.time() - self._archive_stats_cached_at
+        return elapsed < self._CACHE_TTL_SECONDS
+
+    def invalidate_archive_stats_cache(self):
+        """캐시 수동 무효화 (NAS 스캔 후 호출)"""
+        self._archive_stats_cache = {}
+        self._archive_stats_cached_at = None
+        logger.info("archive_stats cache invalidated")
+
+    # === END BLOCK: progress.archive_stats ===
 
     # === BLOCK: progress.data_loader ===
     # Description: Work Status 및 Hand Analysis 데이터 로드
@@ -656,13 +769,16 @@ class ProgressService:
         parent_work_status_ids: Optional[
             Set[int]
         ] = None,  # 상위 폴더에서 매칭된 work_status ID들
-        root_stats: Optional[Dict[str, Any]] = None,  # Issue #29: 루트 전체 통계
+        root_stats: Optional[Dict[str, Any]] = None,  # Issue #29: 루트 전체 통계 (deprecated)
+        archive_stats: Optional[Dict[str, Any]] = None,  # Issue #49: 일관된 아카이브 통계
+        include_hidden: bool = False,  # v1.29.0: 숨김 파일/폴더 포함
     ) -> Tuple[Dict[str, Any], Set[int]]:
         """폴더 데이터 구축 (archive db + metadata db + codecs 통합)
 
         Args:
             parent_work_status_ids: 상위 폴더에서 이미 매칭된 work_status ID 집합.
                                     Cascading Match 방지: 동일 work_status가 부모-자식에 중복 매칭되지 않도록 함.
+            include_hidden: 숨김 파일/폴더 포함 여부 (v1.29.0)
 
         Returns:
             Tuple[폴더 데이터 dict, 이 폴더와 하위 폴더에서 사용된 work_status_id 집합]
@@ -685,7 +801,42 @@ class ProgressService:
             "depth": folder.depth,
         }
 
+        # === extensions/include_hidden 필터 적용 시 필터링된 파일 수/용량 계산 ===
+        # ⚠️ 하위 폴더 포함하여 집계 (folder.path로 시작하는 모든 파일)
+        # depth 제한과 무관하게 전체 하위 파일을 DB에서 직접 집계
+        # v1.29.0: include_hidden 필터 추가
+        if extensions or not include_hidden:
+            filtered_query = (
+                select(
+                    func.count(FileStats.id).label("count"),
+                    func.coalesce(func.sum(FileStats.size), 0).label("total_size"),
+                    func.coalesce(func.sum(FileStats.duration), 0).label("total_duration"),
+                )
+                .where(FileStats.folder_path.startswith(folder.path))
+            )
+            # 확장자 필터 적용
+            if extensions:
+                filtered_query = filtered_query.where(FileStats.extension.in_(extensions))
+            # v1.29.0: 숨김 파일 필터링 (이름이 .으로 시작)
+            if not include_hidden:
+                filtered_query = filtered_query.where(~FileStats.name.startswith('.'))
+            filtered_result = await db.execute(filtered_query)
+            filtered_row = filtered_result.one()
+            folder_dict["filtered_file_count"] = filtered_row.count or 0
+            folder_dict["filtered_size"] = filtered_row.total_size or 0
+            folder_dict["filtered_size_formatted"] = format_size(filtered_row.total_size or 0)
+            folder_dict["filtered_duration"] = filtered_row.total_duration or 0
+            folder_dict["filtered_duration_formatted"] = format_duration(filtered_row.total_duration or 0)
+        else:
+            # 필터 없으면 전체 값 사용 (include_hidden=True, extensions=None)
+            folder_dict["filtered_file_count"] = folder.file_count
+            folder_dict["filtered_size"] = folder.total_size
+            folder_dict["filtered_size_formatted"] = format_size(folder.total_size)
+            folder_dict["filtered_duration"] = folder.total_duration
+            folder_dict["filtered_duration_formatted"] = format_duration(folder.total_duration)
+
         # Issue #29: 루트 전체 대비 비율 정보 (NAS/Sheets 데이터 분리 표시용)
+        # deprecated: archive_stats 사용 권장
         if root_stats:
             root_total_files = root_stats.get("total_files", 0)
             root_total_size = root_stats.get("total_size", 0)
@@ -707,6 +858,33 @@ class ProgressService:
             }
         else:
             folder_dict["root_stats"] = None
+
+        # Issue #49: archive_stats (항상 일관된 전체 통계)
+        if archive_stats:
+            archive_total_files = archive_stats.get("total_files", 0)
+            archive_total_size = archive_stats.get("total_size", 0)
+            folder_dict["archive_stats"] = {
+                "total_files": archive_total_files,
+                "total_size": archive_total_size,
+                "total_size_formatted": archive_stats.get("total_size_formatted", "0 B"),
+                "total_duration": archive_stats.get("total_duration", 0),
+                "total_duration_formatted": archive_stats.get("total_duration_formatted", "0:00:00"),
+                "sheets_total_videos": archive_stats.get("sheets_total_videos", 0),
+                "sheets_total_done": archive_stats.get("sheets_total_done", 0),
+                # 현재 폴더의 전체 대비 비율
+                "file_ratio": (
+                    round(folder.file_count / archive_total_files * 100, 2)
+                    if archive_total_files > 0
+                    else 0
+                ),
+                "size_ratio": (
+                    round(folder.total_size / archive_total_size * 100, 2)
+                    if archive_total_size > 0
+                    else 0
+                ),
+            }
+        else:
+            folder_dict["archive_stats"] = None
 
         # === archive db: Work Status 매칭 ===
         # 우선순위: 1. FK 기반 (명시적 연결) > 2. Fuzzy matching (fallback)
@@ -832,7 +1010,7 @@ class ProgressService:
 
         # === metadata db: 파일 기반 Hand Analysis 집계 ===
         files_progress = await self._get_files_with_matching(
-            db, folder.path, hand_data, extensions
+            db, folder.path, hand_data, extensions, include_hidden
         )
 
         # 현재 폴더의 직접 파일 통계
@@ -913,6 +1091,10 @@ class ProgressService:
             child_folders = child_result.scalars().all()
 
             for child in child_folders:
+                # v1.29.0: 숨김 폴더 필터링 (이름이 .으로 시작)
+                if not include_hidden and child.name.startswith('.'):
+                    continue
+
                 # ⚠️ Cascading Match 방지:
                 # 1. 부모에서 매칭된 ID (parent_work_status_ids)
                 # 2. 현재 폴더에서 매칭된 ID (current_work_status_id)
@@ -934,13 +1116,19 @@ class ProgressService:
                     extensions,
                     include_codecs,
                     parent_work_status_ids=child_parent_ids,  # 상위+형제 매칭 ID 전파
-                    root_stats=root_stats,  # Issue #29: 루트 통계 전달
+                    root_stats=root_stats,  # Issue #29: 루트 통계 전달 (deprecated)
+                    archive_stats=archive_stats,  # Issue #49: 일관된 통계 전달
+                    include_hidden=include_hidden,  # v1.29.0: 숨김 필터 전달
                 )
                 children.append(child_data)
 
                 # ⚠️ 핵심 수정: 이 자식과 그 하위 폴더에서 사용된 모든 ID를 형제에게 전파
                 # 이렇게 하면 사촌 폴더(다른 부모의 자식)도 중복 사용 방지됨
                 sibling_used_ids.update(child_used_ids)
+
+                # ⚠️ filtered_* 자식 합산 제거됨 (v1.35.1)
+                # DB에서 startswith(folder.path)로 하위 폴더 포함 집계하므로 합산 불필요
+                # 합산하면 중복 집계됨
 
                 # 참고: work_summary 자식 합산 제거됨 (Issue #24)
                 # 각 폴더는 자신의 직접 매칭만 표시 (Cascading Match 방지)
@@ -974,6 +1162,11 @@ class ProgressService:
                     files_with_codec += child_codec.get("files_with_codec", 0)
 
         folder_dict["children"] = children
+
+        # Note: filtered_* 값은 이미 DB 쿼리에서 하위 폴더 포함하여 계산됨
+        # 아래 코드는 동일한 값을 재포맷하므로 결과에 영향 없음 (레거시 호환성)
+        folder_dict["filtered_size_formatted"] = format_size(folder_dict["filtered_size"])
+        folder_dict["filtered_duration_formatted"] = format_duration(folder_dict["filtered_duration"])
 
         # work_summary 로직 (Cascading Match Prevention)
         # ⚠️ 핵심 수정 (Issue #24): 직접 매칭이 있는 폴더만 work_summary 표시
@@ -1100,13 +1293,22 @@ class ProgressService:
         folder_path: str,
         hand_data: Dict[str, Dict],
         extensions: Optional[List[str]] = None,
+        include_hidden: bool = False,
     ) -> List[Dict[str, Any]]:
-        """폴더 내 파일들과 Hand Analysis 매칭"""
+        """폴더 내 파일들과 Hand Analysis 매칭
+
+        Args:
+            include_hidden: 숨김 파일 포함 여부 (v1.29.0)
+        """
         query = select(FileStats).where(FileStats.folder_path == folder_path)
 
         # 확장자 필터 적용
         if extensions:
             query = query.where(FileStats.extension.in_(extensions))
+
+        # v1.29.0: 숨김 파일 필터링 (이름이 .으로 시작)
+        if not include_hidden:
+            query = query.where(~FileStats.name.startswith('.'))
 
         file_result = await db.execute(query.order_by(FileStats.name).limit(200))
         files = file_result.scalars().all()
@@ -1262,7 +1464,7 @@ class ProgressService:
         # 파일 매칭
         if include_files:
             files_progress = await self._get_files_with_matching(
-                db, folder.path, hand_data
+                db, folder.path, hand_data, None, False  # extensions=None, include_hidden=False
             )
             folder_dict["files"] = files_progress
 

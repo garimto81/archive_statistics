@@ -20,6 +20,8 @@ import {
   FileVideo,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  Target,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { progressApi } from '../../services/api';
@@ -158,29 +160,83 @@ function ProgressSection({ folder }: { folder: FolderWithProgress }) {
 
   return (
     <div className="space-y-4">
-      {/* Work Summary */}
+      {/* Work Summary - PRD-0041 Enhanced */}
       {workSummary && (
-        <div className="bg-blue-50 rounded-lg p-4">
-          <h4 className="font-medium text-blue-900 mb-2">작업 진행률</h4>
+        <div className={clsx(
+          'rounded-lg p-4',
+          workSummary.is_complete ? 'bg-green-50' : 'bg-blue-50'
+        )}>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className={clsx(
+              'font-medium',
+              workSummary.is_complete ? 'text-green-900' : 'text-blue-900'
+            )}>
+              작업 진행률
+              {workSummary.is_complete && (
+                <span className="ml-2 inline-flex items-center gap-1 text-green-600">
+                  <CheckCircle2 className="w-4 h-4" />
+                  완료
+                </span>
+              )}
+            </h4>
+            {/* Matching Info Badge */}
+            {workSummary.matching_method && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-700">
+                <Target className="w-3 h-3" />
+                {workSummary.matching_method}
+                {workSummary.matching_score !== undefined && (
+                  <span className="text-gray-500">
+                    ({(workSummary.matching_score * 100).toFixed(0)}%)
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-4">
             <div className="flex-1">
-              <div className="h-3 bg-blue-200 rounded-full overflow-hidden">
+              <div className={clsx(
+                'h-3 rounded-full overflow-hidden',
+                workSummary.is_complete ? 'bg-green-200' : 'bg-blue-200'
+              )}>
                 <div
                   className={clsx(
                     'h-full rounded-full transition-all',
-                    workSummary.combined_progress >= 100 ? 'bg-green-500' : 'bg-blue-500'
+                    workSummary.is_complete ? 'bg-green-500'
+                      : workSummary.combined_progress >= 100 ? 'bg-emerald-500'
+                      : 'bg-blue-500'
                   )}
                   style={{ width: `${Math.min(workSummary.combined_progress, 100)}%` }}
                 />
               </div>
             </div>
-            <span className="text-lg font-semibold text-blue-900">
+            <span className={clsx(
+              'text-lg font-semibold',
+              workSummary.is_complete ? 'text-green-900' : 'text-blue-900'
+            )}>
               {workSummary.combined_progress.toFixed(0)}%
             </span>
           </div>
-          <div className="mt-2 text-sm text-blue-700">
+          <div className={clsx(
+            'mt-2 text-sm',
+            workSummary.is_complete ? 'text-green-700' : 'text-blue-700'
+          )}>
             완료: {workSummary.total_done} / 전체: {workSummary.total_files}
           </div>
+
+          {/* PRD-0041: Data Source Mismatch Warning */}
+          {workSummary.data_source_mismatch && (
+            <div className="mt-3 flex items-start gap-2 p-2 rounded bg-amber-100 text-amber-800 text-sm">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-medium">데이터 불일치 감지</span>
+                <p className="text-amber-700 text-xs mt-0.5">
+                  Google Sheets: {workSummary.sheets_total_videos}개 /
+                  NAS: {workSummary.total_files}개
+                  (차이: {workSummary.mismatch_count || 0}개)
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

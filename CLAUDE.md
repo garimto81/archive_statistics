@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Version**: 1.36.0 | **Last Updated**: 2025-12-15
+**Version**: 1.37.0 | **Last Updated**: 2025-12-15
 
 ## Project Overview
 
@@ -161,6 +161,7 @@ Backend (FastAPI + SQLAlchemy + aiosqlite)
 
 | 버전 | 날짜 | 변경 |
 |------|------|------|
+| 1.37.0 | 2025-12-15 | 코드 품질 개선: Python Black/isort (#50), npm 보안 (#51), ESLint 설정 (#52) |
 | 1.36.0 | 2025-12-15 | CLAUDE.md 개선: Block Index 라인 번호 업데이트, MasterFolderTree Props 추가, API 파라미터 문서화 |
 | 1.35.3 | 2025-12-13 | UI 표시 수정: root_stats.total_files → folder.file_count (일관된 표시) |
 | 1.35.2 | 2025-12-13 | Lazy loading 버그 수정: 하위 폴더 로드 시 childData 직접 사용 |

@@ -21,8 +21,8 @@ test.describe('Folders Functional Tests', () => {
   });
 
   test('should display folder tree', async ({ page }) => {
-    // FolderTree component should be visible
-    const folderTree = page.locator('.space-y-6 >> text=Folder Explorer').first();
+    // FolderTreeWithProgress component shows "Progress Overview" header
+    const folderTree = page.locator('text=Progress Overview').first();
     await expect(folderTree).toBeVisible({ timeout: 10000 });
   });
 

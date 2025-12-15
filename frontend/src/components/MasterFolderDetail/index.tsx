@@ -102,15 +102,19 @@ function DetailHeader({
 // ============================================================================
 
 function BasicStats({ folder }: { folder: FolderWithProgress }) {
+  // 필터 적용 여부 확인 (filtered_* 값이 원본과 다르면 필터 적용 중)
+  const isFiltered = folder.filtered_file_count !== undefined &&
+                     folder.filtered_file_count !== folder.file_count;
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
       <div className="bg-gray-50 rounded-lg p-3">
         <div className="flex items-center gap-1.5 text-gray-500 text-xs mb-1">
           <Files className="w-3.5 h-3.5" />
-          Files
+          Files {isFiltered && <span className="text-blue-500">(filtered)</span>}
         </div>
-        <div className="text-lg font-semibold text-gray-900">
-          {folder.file_count.toLocaleString()}
+        <div className={`text-lg font-semibold ${isFiltered ? 'text-blue-600' : 'text-gray-900'}`}>
+          {(folder.filtered_file_count ?? folder.file_count).toLocaleString()}
         </div>
       </div>
       <div className="bg-gray-50 rounded-lg p-3">
@@ -125,17 +129,19 @@ function BasicStats({ folder }: { folder: FolderWithProgress }) {
       <div className="bg-gray-50 rounded-lg p-3">
         <div className="flex items-center gap-1.5 text-gray-500 text-xs mb-1">
           <HardDrive className="w-3.5 h-3.5" />
-          Size
+          Size {isFiltered && <span className="text-blue-500">(filtered)</span>}
         </div>
-        <div className="text-lg font-semibold text-gray-900">{folder.size_formatted}</div>
+        <div className={`text-lg font-semibold ${isFiltered ? 'text-blue-600' : 'text-gray-900'}`}>
+          {folder.filtered_size_formatted ?? folder.size_formatted}
+        </div>
       </div>
       <div className="bg-gray-50 rounded-lg p-3">
         <div className="flex items-center gap-1.5 text-gray-500 text-xs mb-1">
           <Clock className="w-3.5 h-3.5" />
-          Duration
+          Duration {isFiltered && <span className="text-blue-500">(filtered)</span>}
         </div>
-        <div className="text-lg font-semibold text-gray-900">
-          {folder.duration_formatted || '-'}
+        <div className={`text-lg font-semibold ${isFiltered ? 'text-blue-600' : 'text-gray-900'}`}>
+          {folder.filtered_duration_formatted ?? folder.duration_formatted ?? '-'}
         </div>
       </div>
     </div>
@@ -431,6 +437,7 @@ export default function MasterFolderDetail({
 
   return (
     <div
+      data-testid="master-folder-detail"
       className={clsx(
         'bg-white rounded-xl shadow-sm border border-gray-100 p-6',
         className

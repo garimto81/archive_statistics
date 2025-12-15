@@ -44,6 +44,7 @@ export interface MasterFolderTreeProps {
   showCodecBadge?: boolean;
   showSizeInfo?: boolean;
   showFileCount?: boolean;
+  showLegend?: boolean;  // PRD-0049: 범례 표시
 
   // 필터 옵션
   selectedExtensions?: string[];
@@ -326,21 +327,17 @@ function FolderNode({
           {folder.name}
         </span>
 
-        {/* File Count & Size */}
+        {/* File Count & Size - 필터 적용 시 filtered_* 값 사용 */}
+        {/* v1.35.3: folder.file_count 사용 (root_stats.total_files 대신) */}
         <span className="text-xs text-gray-500 ml-2 flex-shrink-0 font-mono">
-          {folder.root_stats ? (
-            <>
-              {folder.file_count.toLocaleString()}/{folder.root_stats.total_files.toLocaleString()}
-              <span className="mx-1 text-gray-300">·</span>
-              {folder.size_formatted}
-            </>
-          ) : (
-            <>
-              {folder.file_count.toLocaleString()} files
-              <span className="mx-1 text-gray-300">·</span>
-              {folder.size_formatted}
-            </>
-          )}
+          <span className={folder.filtered_file_count !== folder.file_count ? 'text-blue-600' : ''}>
+            {(folder.filtered_file_count ?? folder.file_count).toLocaleString()}
+          </span>
+          /{folder.file_count.toLocaleString()}
+          <span className="mx-1 text-gray-300">·</span>
+          <span className={folder.filtered_size !== folder.size ? 'text-blue-600' : ''}>
+            {folder.filtered_size_formatted ?? folder.size_formatted}
+          </span>
         </span>
 
         {/* Work Badge (Progress Mode) - PRD-0041 Enhanced */}
@@ -466,6 +463,7 @@ export default function MasterFolderTree({
   showProgressBar = false,
   showWorkBadge = false,
   showCodecBadge = false,
+  showLegend = false,  // PRD-0049: 범례 표시
 
   // 필터 옵션 (외부에서 제어)
   selectedExtensions: externalExtensions,
@@ -529,6 +527,7 @@ export default function MasterFolderTree({
   });
 
   // 폴더 트리 데이터 조회
+  // staleTime: 30초 동안 캐시된 데이터 사용 (필터 변경 시 딜레이 감소)
   const {
     data: treeData,
     isLoading,
@@ -544,6 +543,7 @@ export default function MasterFolderTree({
         effectiveShowCodec,
         showHidden
       ),
+    staleTime: 30 * 1000, // 30초 캐시
     refetchInterval: enableAutoRefresh ? autoRefreshInterval : false,
   });
 
@@ -561,13 +561,14 @@ export default function MasterFolderTree({
           effectiveShowCodec,
           showHidden
         );
-        // API가 FolderWithProgress[] 배열을 직접 반환함
-        if (childData?.[0]?.children) {
+        // API가 path의 자식 폴더들을 FolderWithProgress[] 배열로 반환함
+        // 예: path=WSOP2010 요청 → [Masters] 반환 (WSOP2010의 자식들)
+        if (childData && childData.length > 0) {
           queryClient.setQueryData(
             ['master-folder-tree', initialPath, initialDepth, extensions, showHidden, effectiveShowCodec],
             (oldData: FolderWithProgress[] | undefined) => {
               if (!oldData) return oldData;
-              return updateFolderChildren(oldData, path, childData[0].children!);
+              return updateFolderChildren(oldData, path, childData);
             }
           );
         }
@@ -619,6 +620,7 @@ export default function MasterFolderTree({
 
   return (
     <div
+      data-testid="master-folder-tree"
       className={clsx('bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col', className)}
       style={{ height: height ? (typeof height === 'number' ? `${height}px` : height) : undefined }}
     >
@@ -655,6 +657,26 @@ export default function MasterFolderTree({
           searchQuery={enableSearch ? internalSearchQuery : undefined}
           onSearchChange={enableSearch ? setInternalSearchQuery : undefined}
         />
+      )}
+
+      {/* Progress Legend (PRD-0049) */}
+      {showLegend && (
+        <div data-testid="progress-legend" className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+          <div className="flex items-center gap-4 text-xs">
+            <div data-testid="legend-complete" className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-green-500"></span>
+              <span className="text-gray-600">완료 (Complete)</span>
+            </div>
+            <div data-testid="legend-in-progress" className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+              <span className="text-gray-600">진행 중 (In Progress)</span>
+            </div>
+            <div data-testid="legend-warning" className="flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-amber-500" />
+              <span className="text-gray-600">불일치 (Warning)</span>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Tree Content */}

@@ -35,6 +35,8 @@ import {
   AlertCircle,
   Film,
   Music,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { progressApi } from '../services/api';
@@ -389,14 +391,14 @@ function FolderNode({
           </div>
         )}
 
-        {/* Progress Mode: Progress Bar */}
+        {/* Progress Mode: Progress Bar - PRD-0041 updated */}
         {!isCodecMode && (
           <>
             <div className="flex-1 max-w-[150px] ml-3">
               {workSummary ? (
                 <ProgressBar
                   metadataProgress={workSummary.combined_progress}
-                  isComplete={workSummary.combined_progress >= 100}
+                  isComplete={workSummary.is_complete || workSummary.combined_progress >= 100}
                   size="sm"
                   showLabel={false}
                   showPercentage={false}
@@ -413,11 +415,36 @@ function FolderNode({
             <div className="flex items-center gap-1 ml-2 flex-shrink-0 text-xs min-w-[100px]">
               {workSummary ? (
                 <>
-                  <span className={clsx(
-                    workSummary.combined_progress >= 100 ? 'text-green-600 font-medium' : 'text-blue-600'
-                  )}>
+                  <span
+                    className={clsx(
+                      'px-1.5 py-0.5 rounded',
+                      workSummary.is_complete
+                        ? 'bg-green-100 text-green-700'
+                        : workSummary.combined_progress >= 100
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-blue-100 text-blue-700'
+                    )}
+                    title={workSummary.matching_method
+                      ? `매칭: ${workSummary.matching_method} (${((workSummary.matching_score || 0) * 100).toFixed(0)}%)`
+                      : undefined}
+                  >
                     {workSummary.combined_progress.toFixed(0)}%
                   </span>
+
+                  {/* PRD-0041: Complete Badge */}
+                  {workSummary.is_complete && (
+                    <span title="100% 완료 (done = total = NAS files)">
+                      <CheckCircle2 className="w-4 h-4 text-green-600" />
+                    </span>
+                  )}
+
+                  {/* PRD-0041: Mismatch Warning */}
+                  {workSummary.data_source_mismatch && (
+                    <span title={`데이터 불일치: 시트(${workSummary.sheets_total_videos}) vs NAS(${workSummary.total_files}) 차이 ${workSummary.mismatch_count || 0}`}>
+                      <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    </span>
+                  )}
+
                   <span className="text-gray-400">
                     ({workSummary.total_done}/{workSummary.total_files})
                   </span>

@@ -2,26 +2,22 @@
  * Dashboard - 메인 대시보드 페이지
  *
  * 아카이브 통계 요약 및 데이터 소스 현황을 한눈에 보여주는 대시보드.
- * Phase 2: Gantt-chart 스타일 폴더 트리 + 진행률 통합
- * Phase 3: 확장자 필터 GUI 추가 (Issue #7)
+ * PRD-0049: MasterFolderTree 통합 (Issue #48)
  *
  * Layout:
- * - Extension Filter: 파일 확장자 필터 (다중 선택)
  * - Stats Cards: 전체 파일 수, 용량, 미디어 재생시간, 파일 타입 수
- * - Left: Progress Overview (폴더 트리 + 진행률)
+ * - Left: Progress Overview (MasterFolderTree + CompactFilterBar)
  * - Right: Folder Detail, Data Source Status
  *
  * Block: pages.dashboard
  */
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Files, HardDrive, Clock, FileType } from 'lucide-react';
 import StatCard from '../components/StatCard';
-import FolderTreeWithProgress, {
-  FolderProgressDetail,
-} from '../components/FolderTreeWithProgress';
+import MasterFolderTree from '../components/MasterFolderTree';
+import MasterFolderDetail from '../components/MasterFolderDetail';
 import DataSourceStatus from '../components/DataSourceStatus';
-import ExtensionFilter from '../components/ExtensionFilter';
 import WorkStatusSummary from '../components/WorkStatusSummary';
 import TopWorkers from '../components/TopWorkers';
 import { statsApi, progressApi } from '../services/api';
@@ -30,25 +26,18 @@ import type { FolderWithProgress, FileWithProgress } from '../types';
 export default function Dashboard() {
   const [selectedFolder, setSelectedFolder] = useState<FolderWithProgress | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileWithProgress | null>(null);
-  const [selectedExtensions, setSelectedExtensions] = useState<Set<string>>(new Set());
-
-  // Convert Set to array for API calls
-  const extensionsArray = useMemo(
-    () => (selectedExtensions.size > 0 ? Array.from(selectedExtensions) : undefined),
-    [selectedExtensions]
-  );
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['stats-summary', extensionsArray],
-    queryFn: () => statsApi.getSummary(extensionsArray),
+    queryKey: ['stats-summary'],
+    queryFn: () => statsApi.getSummary(),
   });
 
   // selectedFolder.path를 progressSummary 필터에 연동
   const selectedFolderPath = selectedFolder?.path;
 
   const { data: progressSummary } = useQuery({
-    queryKey: ['progress-summary', extensionsArray, selectedFolderPath],
-    queryFn: () => progressApi.getSummary(extensionsArray, selectedFolderPath),
+    queryKey: ['progress-summary', selectedFolderPath],
+    queryFn: () => progressApi.getSummary(undefined, selectedFolderPath),
     refetchInterval: 60000,
   });
 
@@ -71,12 +60,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Extension Filter */}
-      <ExtensionFilter
-        selectedExtensions={selectedExtensions}
-        onChange={setSelectedExtensions}
-      />
-
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
@@ -110,28 +93,45 @@ export default function Dashboard() {
       </div>
 
       {/* Main Content: Flex Layout + Independent Scroll */}
-      <div className="flex flex-col lg:flex-row gap-6" style={{ height: 'calc(100vh - 280px)' }}>
-        {/* Left: Progress Overview - Independent Scroll */}
-        <div className="flex-[2] min-h-0 overflow-y-auto">
-          <FolderTreeWithProgress
+      <div className="flex flex-col lg:flex-row gap-6" style={{ height: 'calc(100vh - 240px)' }}>
+        {/* Left: Progress Overview - MasterFolderTree (PRD-0049) */}
+        <div className="flex-[2] min-h-0">
+          <MasterFolderTree
+            // 기본 설정
             initialDepth={3}
             showFiles={true}
             enableLazyLoading={true}
-            selectedExtensions={extensionsArray}
+            enableAutoRefresh={true}
+            autoRefreshInterval={60000}
+            // 표시 옵션 (Progress Mode)
+            showProgressBar={true}
+            showWorkBadge={true}
+            showCodecBadge={false}
+            showLegend={true}
+            // 필터바 설정
+            showFilterBar={true}
+            filterBarTitle="Progress Overview"
+            enableExtensionFilter={true}
+            enableHiddenFilter={true}
+            enableDisplayToggles={true}
+            enableSearch={true}
+            // 콜백
             onFolderSelect={handleFolderSelect}
             onFileSelect={handleFileSelect}
+            selectedPath={selectedFolder?.path}
+            // 스타일
+            className="h-full"
           />
         </div>
 
         {/* Right Panel: Detail & Data Sources - Independent Scroll */}
         <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-          {/* Selected Folder Detail */}
-          {selectedFolder && (
-            <FolderProgressDetail
-              folderPath={selectedFolder.path}
-              onFileSelect={handleFileSelect}
-            />
-          )}
+          {/* Selected Folder Detail - MasterFolderDetail (PRD-0049) */}
+          <MasterFolderDetail
+            folder={selectedFolder}
+            mode="progress"
+            onClose={() => setSelectedFolder(null)}
+          />
 
           {/* Selected File Detail */}
           {selectedFile && selectedFile.metadata_progress && (

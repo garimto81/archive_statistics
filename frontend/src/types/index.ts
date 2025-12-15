@@ -348,6 +348,12 @@ export interface FolderWithProgress {
   duration: number;
   duration_formatted: string;
   depth: number;
+  // 필터링된 통계 (extensions 필터 적용 시)
+  filtered_file_count?: number;
+  filtered_size?: number;
+  filtered_size_formatted?: string;
+  filtered_duration?: number;
+  filtered_duration_formatted?: string;
   // Progress 데이터 (Backend work_summary 기반)
   work_summary?: WorkSummary;       // 트리 뷰용 요약 (하이어라키 합산 포함)
   work_statuses?: WorkStatusInfo[]; // 상세 패널용 목록

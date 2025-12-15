@@ -37,8 +37,8 @@ export default defineConfig({
 
   // Shared settings for all projects
   use: {
-    // Base URL for navigation (port 80 for Docker, 5173 for dev)
-    baseURL: process.env.BASE_URL || 'http://localhost:80',
+    // Base URL for navigation (port 8082 for Docker, 5173 for dev)
+    baseURL: process.env.BASE_URL || 'http://localhost:8082',
 
     // Collect trace when retrying the failed test
     trace: 'on-first-retry',

@@ -123,6 +123,7 @@ export default function CompactFilterBar({
 
   return (
     <div
+      data-testid="compact-filter-bar"
       className={clsx(
         'flex items-center justify-between gap-3 px-4 py-2 bg-white border-b border-gray-200',
         className
@@ -220,6 +221,7 @@ export default function CompactFilterBar({
         {/* 숨김 파일 토글 */}
         {hidden?.enabled && (
           <button
+            data-testid="hidden-files-toggle"
             onClick={() => hidden.onChange(!hidden.show)}
             className={clsx(
               'flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-lg border transition-colors',

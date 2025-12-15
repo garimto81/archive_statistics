@@ -2,9 +2,11 @@
 Worker Statistics Schemas
 Pydantic models for worker (PIC) statistics aggregation
 """
-from pydantic import BaseModel, computed_field
-from typing import Optional, List, Dict
+
 from datetime import datetime
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, computed_field
 
 
 class WorkerTaskResponse(BaseModel):

@@ -41,7 +41,18 @@ def get_mime_type(extension: str) -> str:
     """Get MIME type category from extension"""
     extension = extension.lower().lstrip(".")
 
-    video_exts = {"mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg"}
+    video_exts = {
+        "mp4",
+        "mkv",
+        "avi",
+        "mov",
+        "wmv",
+        "flv",
+        "webm",
+        "m4v",
+        "mpg",
+        "mpeg",
+    }
     audio_exts = {"mp3", "wav", "flac", "aac", "ogg", "wma", "m4a"}
     image_exts = {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "raw", "webp", "svg"}
     doc_exts = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf"}

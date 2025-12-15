@@ -8,26 +8,30 @@ Data Sources API - 통합 데이터 소스 상태 조회
 
 Block: api.data_sources
 """
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import Optional, List
-from pydantic import BaseModel
+
 from datetime import datetime
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.services.sheets_sync import sheets_sync_service
-from app.services.hand_analysis_sync import hand_analysis_sync_service
-from app.models.work_status import WorkStatus
 from app.models.hand_analysis import HandAnalysis
+from app.models.work_status import WorkStatus
+from app.services.hand_analysis_sync import hand_analysis_sync_service
+from app.services.sheets_sync import sheets_sync_service
 
 router = APIRouter()
 
 
 # ==================== Schemas ====================
 
+
 class DataSourceStatus(BaseModel):
     """단일 데이터 소스 상태"""
+
     name: str
     type: str
     enabled: bool
@@ -40,6 +44,7 @@ class DataSourceStatus(BaseModel):
 
 class AllDataSourcesResponse(BaseModel):
     """모든 데이터 소스 상태 응답"""
+
     archive_db: DataSourceStatus
     metadata_db: DataSourceStatus
     iconik_db: DataSourceStatus
@@ -47,6 +52,7 @@ class AllDataSourcesResponse(BaseModel):
 
 class WorkStatusSummary(BaseModel):
     """Work Status 요약"""
+
     total_tasks: int
     completed: int
     in_progress: int
@@ -57,6 +63,7 @@ class WorkStatusSummary(BaseModel):
 
 class HandAnalysisSummary(BaseModel):
     """Hand Analysis 요약"""
+
     total_hands: int
     worksheets_count: int
     by_worksheet: List[dict]
@@ -64,6 +71,7 @@ class HandAnalysisSummary(BaseModel):
 
 
 # ==================== Endpoints ====================
+
 
 @router.get("/status", response_model=AllDataSourcesResponse)
 async def get_all_data_sources():
@@ -81,13 +89,25 @@ async def get_all_data_sources():
         type="Work Status",
         enabled=sheets_sync_service.is_enabled,
         status=sheets_sync_service.status,
-        last_sync=sheets_sync_service.last_sync_time.isoformat() if sheets_sync_service.last_sync_time else None,
-        next_sync=sheets_sync_service.next_sync_time.isoformat() if sheets_sync_service.next_sync_time else None,
+        last_sync=(
+            sheets_sync_service.last_sync_time.isoformat()
+            if sheets_sync_service.last_sync_time
+            else None
+        ),
+        next_sync=(
+            sheets_sync_service.next_sync_time.isoformat()
+            if sheets_sync_service.next_sync_time
+            else None
+        ),
         record_count=sheets_result.synced_count if sheets_result else 0,
-        details={
-            "created": sheets_result.created_count if sheets_result else 0,
-            "updated": sheets_result.updated_count if sheets_result else 0,
-        } if sheets_result else None,
+        details=(
+            {
+                "created": sheets_result.created_count if sheets_result else 0,
+                "updated": sheets_result.updated_count if sheets_result else 0,
+            }
+            if sheets_result
+            else None
+        ),
     )
 
     # metadata_db (Hand Analysis)
@@ -97,14 +117,26 @@ async def get_all_data_sources():
         type="Hand Analysis",
         enabled=hand_analysis_sync_service.is_enabled,
         status=hand_analysis_sync_service.status,
-        last_sync=hand_analysis_sync_service.last_sync_time.isoformat() if hand_analysis_sync_service.last_sync_time else None,
-        next_sync=hand_analysis_sync_service.next_sync_time.isoformat() if hand_analysis_sync_service.next_sync_time else None,
+        last_sync=(
+            hand_analysis_sync_service.last_sync_time.isoformat()
+            if hand_analysis_sync_service.last_sync_time
+            else None
+        ),
+        next_sync=(
+            hand_analysis_sync_service.next_sync_time.isoformat()
+            if hand_analysis_sync_service.next_sync_time
+            else None
+        ),
         record_count=hand_result.synced_count if hand_result else 0,
-        details={
-            "created": hand_result.created_count if hand_result else 0,
-            "updated": hand_result.updated_count if hand_result else 0,
-            "worksheets": hand_result.worksheets_processed if hand_result else 0,
-        } if hand_result else None,
+        details=(
+            {
+                "created": hand_result.created_count if hand_result else 0,
+                "updated": hand_result.updated_count if hand_result else 0,
+                "worksheets": hand_result.worksheets_processed if hand_result else 0,
+            }
+            if hand_result
+            else None
+        ),
     )
 
     # iconik_db (미구현)
@@ -141,10 +173,14 @@ async def get_work_status_summary(
     total_tasks = await db.scalar(total_query) or 0
 
     # 상태별 집계
-    completed_query = select(func.count(WorkStatus.id)).where(WorkStatus.status == "completed")
+    completed_query = select(func.count(WorkStatus.id)).where(
+        WorkStatus.status == "completed"
+    )
     completed = await db.scalar(completed_query) or 0
 
-    in_progress_query = select(func.count(WorkStatus.id)).where(WorkStatus.status == "in_progress")
+    in_progress_query = select(func.count(WorkStatus.id)).where(
+        WorkStatus.status == "in_progress"
+    )
     in_progress = await db.scalar(in_progress_query) or 0
 
     pending = total_tasks - completed - in_progress
@@ -159,7 +195,11 @@ async def get_work_status_summary(
         in_progress=in_progress,
         pending=pending,
         overall_progress=round(float(overall_progress), 1),
-        last_sync=sheets_sync_service.last_sync_time.isoformat() if sheets_sync_service.last_sync_time else None,
+        last_sync=(
+            sheets_sync_service.last_sync_time.isoformat()
+            if sheets_sync_service.last_sync_time
+            else None
+        ),
     )
 
 
@@ -178,10 +218,13 @@ async def get_hand_analysis_summary(
     total_hands = await db.scalar(total_query) or 0
 
     # 워크시트별 집계
-    ws_query = select(
-        HandAnalysis.source_worksheet,
-        func.count(HandAnalysis.id).label('count')
-    ).group_by(HandAnalysis.source_worksheet).order_by(func.count(HandAnalysis.id).desc())
+    ws_query = (
+        select(
+            HandAnalysis.source_worksheet, func.count(HandAnalysis.id).label("count")
+        )
+        .group_by(HandAnalysis.source_worksheet)
+        .order_by(func.count(HandAnalysis.id).desc())
+    )
 
     ws_result = await db.execute(ws_query)
     by_worksheet = [
@@ -193,5 +236,9 @@ async def get_hand_analysis_summary(
         total_hands=total_hands,
         worksheets_count=len(by_worksheet),
         by_worksheet=by_worksheet,
-        last_sync=hand_analysis_sync_service.last_sync_time.isoformat() if hand_analysis_sync_service.last_sync_time else None,
+        last_sync=(
+            hand_analysis_sync_service.last_sync_time.isoformat()
+            if hand_analysis_sync_service.last_sync_time
+            else None
+        ),
     )

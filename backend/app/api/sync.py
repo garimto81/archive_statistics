@@ -3,19 +3,22 @@ Sync API - Google Sheets 동기화 상태 및 트리거
 
 Block: sync.sheets
 """
+
+from datetime import datetime
+from typing import Any, Dict, Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
-from datetime import datetime
 
-from app.services.sheets_sync import sheets_sync_service
 from app.core.config import settings
+from app.services.sheets_sync import sheets_sync_service
 
 router = APIRouter()
 
 
 class SyncStatusResponse(BaseModel):
     """동기화 상태 응답"""
+
     enabled: bool
     status: str
     last_sync: Optional[str]
@@ -27,6 +30,7 @@ class SyncStatusResponse(BaseModel):
 
 class SyncTriggerResponse(BaseModel):
     """동기화 트리거 응답"""
+
     success: bool
     synced_at: str
     total_records: int
@@ -128,8 +132,9 @@ async def get_sync_config():
     # Service Account 이메일 마스킹
     sa_email = None
     try:
-        from pathlib import Path
         import json
+        from pathlib import Path
+
         sa_path = Path(settings.GOOGLE_SERVICE_ACCOUNT_FILE)
         if not sa_path.exists():
             sa_path = Path("backend") / settings.GOOGLE_SERVICE_ACCOUNT_FILE
@@ -146,7 +151,9 @@ async def get_sync_config():
         sa_email = "Error reading"
 
     return {
-        "sheet_url": settings.WORK_STATUS_SHEET_URL if settings.SHEETS_SYNC_ENABLED else None,
+        "sheet_url": (
+            settings.WORK_STATUS_SHEET_URL if settings.SHEETS_SYNC_ENABLED else None
+        ),
         "interval_minutes": settings.SHEETS_SYNC_INTERVAL_MINUTES,
         "service_account_email": sa_email,
         "enabled": settings.SHEETS_SYNC_ENABLED,

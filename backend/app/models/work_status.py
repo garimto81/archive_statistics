@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
-from sqlalchemy.orm import relationship
 from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import relationship
+
 from app.core.database import Base
 
 
@@ -31,7 +33,9 @@ class WorkStatus(Base):
 
     # Assignment
     pic = Column(String, nullable=True)  # Person In Charge (담당자)
-    status = Column(String, default="pending")  # pending, in_progress, review, completed
+    status = Column(
+        String, default="pending"
+    )  # pending, in_progress, review, completed
 
     # Progress
     total_videos = Column(Integer, default=0)

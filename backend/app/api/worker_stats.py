@@ -2,19 +2,21 @@
 Worker Statistics API
 Aggregates work status data by PIC (Person In Charge)
 """
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import Dict, List
+
 from collections import defaultdict
+from typing import Dict, List
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.work_status import WorkStatus, Archive
+from app.models.work_status import Archive, WorkStatus
 from app.schemas.worker_stats import (
-    WorkerStatsResponse,
-    WorkerStatsListResponse,
-    WorkerStatsSummary,
     WorkerDetailResponse,
+    WorkerStatsListResponse,
+    WorkerStatsResponse,
+    WorkerStatsSummary,
     WorkerTaskResponse,
 )
 
@@ -44,13 +46,15 @@ async def get_worker_stats(db: AsyncSession = Depends(get_db)):
     rows = result.all()
 
     # Aggregate by PIC
-    workers_data: Dict[str, dict] = defaultdict(lambda: {
-        "task_count": 0,
-        "total_videos": 0,
-        "total_done": 0,
-        "archives": set(),
-        "status_breakdown": defaultdict(int),
-    })
+    workers_data: Dict[str, dict] = defaultdict(
+        lambda: {
+            "task_count": 0,
+            "total_videos": 0,
+            "total_done": 0,
+            "archives": set(),
+            "status_breakdown": defaultdict(int),
+        }
+    )
 
     # Summary counters
     total_videos = 0
@@ -81,15 +85,19 @@ async def get_worker_stats(db: AsyncSession = Depends(get_db)):
     # Build worker responses
     workers: List[WorkerStatsResponse] = []
     for pic, data in sorted(workers_data.items()):
-        workers.append(WorkerStatsResponse(
-            pic=pic,
-            task_count=data["task_count"],
-            total_videos=data["total_videos"],
-            total_done=data["total_done"],
-            progress_percent=calculate_progress(data["total_videos"], data["total_done"]),
-            archives=sorted(list(data["archives"])),
-            status_breakdown=dict(data["status_breakdown"]),
-        ))
+        workers.append(
+            WorkerStatsResponse(
+                pic=pic,
+                task_count=data["task_count"],
+                total_videos=data["total_videos"],
+                total_done=data["total_done"],
+                progress_percent=calculate_progress(
+                    data["total_videos"], data["total_done"]
+                ),
+                archives=sorted(list(data["archives"])),
+                status_breakdown=dict(data["status_breakdown"]),
+            )
+        )
 
     # Build summary
     summary = WorkerStatsSummary(
@@ -144,8 +152,7 @@ async def get_worker_stats_summary(db: AsyncSession = Depends(get_db)):
 
     # Status breakdown
     status_result = await db.execute(
-        select(WorkStatus.status, func.count())
-        .group_by(WorkStatus.status)
+        select(WorkStatus.status, func.count()).group_by(WorkStatus.status)
     )
     by_status = {row[0]: row[1] for row in status_result.all()}
 
@@ -184,12 +191,16 @@ async def get_worker_detail(
     """
     # Handle "Unassigned" special case
     if pic.lower() == "unassigned":
-        query = select(WorkStatus, Archive.name.label("archive_name")).outerjoin(Archive).where(
-            WorkStatus.pic.is_(None)
+        query = (
+            select(WorkStatus, Archive.name.label("archive_name"))
+            .outerjoin(Archive)
+            .where(WorkStatus.pic.is_(None))
         )
     else:
-        query = select(WorkStatus, Archive.name.label("archive_name")).outerjoin(Archive).where(
-            WorkStatus.pic == pic
+        query = (
+            select(WorkStatus, Archive.name.label("archive_name"))
+            .outerjoin(Archive)
+            .where(WorkStatus.pic == pic)
         )
 
     result = await db.execute(query.order_by(WorkStatus.category))
@@ -211,18 +222,20 @@ async def get_worker_detail(
 
         progress = calculate_progress(ws.total_videos, ws.excel_done)
 
-        tasks.append(WorkerTaskResponse(
-            id=ws.id,
-            archive_id=ws.archive_id,
-            archive_name=archive_name,
-            category=ws.category,
-            status=ws.status,
-            total_videos=ws.total_videos,
-            excel_done=ws.excel_done,
-            progress_percent=progress,
-            notes1=ws.notes1,
-            notes2=ws.notes2,
-        ))
+        tasks.append(
+            WorkerTaskResponse(
+                id=ws.id,
+                archive_id=ws.archive_id,
+                archive_name=archive_name,
+                category=ws.category,
+                status=ws.status,
+                total_videos=ws.total_videos,
+                excel_done=ws.excel_done,
+                progress_percent=progress,
+                notes1=ws.notes1,
+                notes2=ws.notes2,
+            )
+        )
 
         total_videos += ws.total_videos
         total_done += ws.excel_done

@@ -10,8 +10,9 @@ Issue #49: NAS 폴더 통계 계산 로직 리팩토링
 - ArchiveStats: 전체 아카이브 통계 (항상 동일한 값)
 """
 
-from pydantic import BaseModel, Field
 from typing import Optional
+
+from pydantic import BaseModel, Field
 
 
 class FileCountInfo(BaseModel):
@@ -99,11 +100,17 @@ class ArchiveStats(BaseModel):
     total_size: int = Field(description="전체 아카이브 용량 (bytes)")
     total_size_formatted: str = Field(description="포맷된 전체 용량")
     total_duration: float = Field(default=0, description="전체 재생시간 (초)")
-    total_duration_formatted: str = Field(default="0:00:00", description="포맷된 전체 재생시간")
+    total_duration_formatted: str = Field(
+        default="0:00:00", description="포맷된 전체 재생시간"
+    )
 
     # Sheets 통계 (참조용)
-    sheets_total_videos: int = Field(default=0, description="Google Sheets 전체 비디오 수")
-    sheets_total_done: int = Field(default=0, description="Google Sheets 완료된 비디오 수")
+    sheets_total_videos: int = Field(
+        default=0, description="Google Sheets 전체 비디오 수"
+    )
+    sheets_total_done: int = Field(
+        default=0, description="Google Sheets 완료된 비디오 수"
+    )
 
     class Config:
         json_schema_extra = {
@@ -151,11 +158,17 @@ class FolderStatsV2(BaseModel):
 
     # V1 호환 필드 (deprecated, 마이그레이션 기간 동안 유지)
     file_count: int = Field(deprecated=True, description="Use file_counts.stored")
-    filtered_file_count: int = Field(deprecated=True, description="Use file_counts.visible")
+    filtered_file_count: int = Field(
+        deprecated=True, description="Use file_counts.visible"
+    )
     size: int = Field(deprecated=True, description="Use sizes.stored")
     filtered_size: int = Field(deprecated=True, description="Use sizes.visible")
-    size_formatted: str = Field(deprecated=True, description="Use sizes.stored_formatted")
-    filtered_size_formatted: str = Field(deprecated=True, description="Use sizes.visible_formatted")
+    size_formatted: str = Field(
+        deprecated=True, description="Use sizes.stored_formatted"
+    )
+    filtered_size_formatted: str = Field(
+        deprecated=True, description="Use sizes.visible_formatted"
+    )
 
     class Config:
         from_attributes = True

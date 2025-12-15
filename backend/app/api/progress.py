@@ -7,10 +7,11 @@ metadata db(핸드 분석)와 archive db(작업 현황)를 NAS 폴더 구조와 
 Block: api.progress
 """
 
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.services.progress_service import progress_service
@@ -238,9 +239,7 @@ async def get_folder_tree_with_progress(
     extensions: Optional[str] = Query(
         None, description="쉼표로 구분된 확장자 필터 (예: mp4,mkv)"
     ),
-    include_hidden: bool = Query(
-        False, description="숨김 파일/폴더 포함 (v1.29.0)"
-    ),
+    include_hidden: bool = Query(False, description="숨김 파일/폴더 포함 (v1.29.0)"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -332,7 +331,8 @@ async def get_progress_summary(
     - extensions 필터로 특정 확장자만 집계
     """
     from sqlalchemy import func
-    from app.models.file_stats import FolderStats, FileStats
+
+    from app.models.file_stats import FileStats, FolderStats
     from app.models.hand_analysis import HandAnalysis
     from app.models.work_status import WorkStatus
 

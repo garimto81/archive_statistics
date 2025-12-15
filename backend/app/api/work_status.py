@@ -1,28 +1,30 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import List, Optional
 import csv
 import io
 from datetime import datetime
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.work_status import WorkStatus, Archive
+from app.models.work_status import Archive, WorkStatus
 from app.schemas.work_status import (
-    WorkStatusCreate,
-    WorkStatusUpdate,
-    WorkStatusResponse,
-    WorkStatusListResponse,
-    ArchiveResponse,
     ArchiveCreate,
+    ArchiveResponse,
+    WorkStatusCreate,
     WorkStatusImportResult,
+    WorkStatusListResponse,
+    WorkStatusResponse,
+    WorkStatusUpdate,
 )
 
 router = APIRouter()
 
 
 # ===== Archive Endpoints =====
+
 
 @router.get("/archives", response_model=List[ArchiveResponse])
 async def get_archives(db: AsyncSession = Depends(get_db)):
@@ -45,6 +47,7 @@ async def create_archive(
 
 
 # ===== Work Status Endpoints =====
+
 
 @router.get("", response_model=WorkStatusListResponse)
 async def get_work_statuses(
@@ -230,6 +233,7 @@ async def delete_work_status(
 
 # ===== Import/Export =====
 
+
 @router.post("/import", response_model=WorkStatusImportResult)
 async def import_csv(
     file: UploadFile = File(...),
@@ -279,7 +283,9 @@ async def import_csv(
 
             excel_done = 0
             try:
-                done_str = row.get("Excel Done\n(# of videos)", row.get("Excel Done", "0"))
+                done_str = row.get(
+                    "Excel Done\n(# of videos)", row.get("Excel Done", "0")
+                )
                 excel_done = int(done_str) if done_str else 0
             except ValueError:
                 pass
@@ -327,27 +333,37 @@ async def export_csv(db: AsyncSession = Depends(get_db)):
     writer = csv.writer(output)
 
     # Header
-    writer.writerow([
-        "Archive", "Category", "PIC", "Status",
-        "Total (# of videos)", "Excel Done (# of videos)",
-        "Progress %", "Notes 1", "Notes 2"
-    ])
+    writer.writerow(
+        [
+            "Archive",
+            "Category",
+            "PIC",
+            "Status",
+            "Total (# of videos)",
+            "Excel Done (# of videos)",
+            "Progress %",
+            "Notes 1",
+            "Notes 2",
+        ]
+    )
 
     # Data
     for row in rows:
         ws = row[0]
         ws.calculate_progress()
-        writer.writerow([
-            row[1],  # archive_name
-            ws.category,
-            ws.pic or "",
-            ws.status,
-            ws.total_videos,
-            ws.excel_done,
-            f"{ws.progress_percent:.2f}%",
-            ws.notes1 or "",
-            ws.notes2 or "",
-        ])
+        writer.writerow(
+            [
+                row[1],  # archive_name
+                ws.category,
+                ws.pic or "",
+                ws.status,
+                ws.total_videos,
+                ws.excel_done,
+                f"{ws.progress_percent:.2f}%",
+                ws.notes1 or "",
+                ws.notes2 or "",
+            ]
+        )
 
     output.seek(0)
     filename = f"work_status_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"

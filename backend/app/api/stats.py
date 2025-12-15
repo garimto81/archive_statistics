@@ -1,33 +1,36 @@
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import List, Optional
 from datetime import datetime, timedelta
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.file_stats import FileStats, FolderStats, ScanHistory, DailySnapshot
+from app.models.file_stats import DailySnapshot, FileStats, FolderStats, ScanHistory
 from app.schemas.stats import (
-    StatsSummary,
-    FileTypeStats,
-    HistoryData,
-    HistoryResponse,
+    CodecCount,
+    CodecsByExtensionResponse,
     CodecStats,
     CodecSummary,
-    CodecCount,
-    ExtensionCodecStats,
-    CodecsByExtensionResponse,
     CodecTreeNode,
-    FolderCodecSummary,
+    ExtensionCodecStats,
     FileCodecInfo,
+    FileTypeStats,
+    FolderCodecSummary,
+    HistoryData,
+    HistoryResponse,
+    StatsSummary,
 )
-from app.services.utils import format_size, format_duration
+from app.services.utils import format_duration, format_size
 
 router = APIRouter()
 
 
 @router.get("/summary", response_model=StatsSummary)
 async def get_stats_summary(
-    extensions: Optional[str] = Query(None, description="Comma-separated extensions filter (e.g., mp4,mkv,avi)"),
+    extensions: Optional[str] = Query(
+        None, description="Comma-separated extensions filter (e.g., mp4,mkv,avi)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get overall archive statistics summary with optional extension filter"""
@@ -35,7 +38,11 @@ async def get_stats_summary(
     # Parse extensions filter
     ext_list = None
     if extensions:
-        ext_list = [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",") if e.strip()]
+        ext_list = [
+            f".{e.strip().lower().lstrip('.')}"
+            for e in extensions.split(",")
+            if e.strip()
+        ]
 
     # If filtering by extensions, get stats directly from FileStats
     if ext_list:
@@ -54,8 +61,9 @@ async def get_stats_summary(
 
         # Count folders containing these files
         folder_result = await db.execute(
-            select(func.count(func.distinct(FileStats.folder_path)))
-            .where(FileStats.extension.in_(ext_list))
+            select(func.count(func.distinct(FileStats.folder_path))).where(
+                FileStats.extension.in_(ext_list)
+            )
         )
         total_folders = folder_result.scalar() or 0
         file_type_count = len(ext_list)
@@ -75,16 +83,12 @@ async def get_stats_summary(
         total_duration = stats.total_duration or 0.0
 
         # Get total folder count (all folders including root)
-        folder_count_result = await db.execute(
-            select(func.count(FolderStats.id))
-        )
+        folder_count_result = await db.execute(select(func.count(FolderStats.id)))
         total_folders = folder_count_result.scalar() or 0
 
         # If folder duration is 0, get it directly from files (fallback)
         if total_duration == 0:
-            duration_result = await db.execute(
-                select(func.sum(FileStats.duration))
-            )
+            duration_result = await db.execute(select(func.sum(FileStats.duration)))
             total_duration = duration_result.scalar() or 0.0
 
         # Get unique file type count
@@ -117,7 +121,9 @@ async def get_stats_summary(
 @router.get("/file-types", response_model=List[FileTypeStats])
 async def get_file_type_stats(
     limit: int = Query(default=20, ge=1, le=100),
-    extensions: Optional[str] = Query(None, description="Comma-separated extensions filter"),
+    extensions: Optional[str] = Query(
+        None, description="Comma-separated extensions filter"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get file statistics by extension/type with optional filter"""
@@ -125,7 +131,11 @@ async def get_file_type_stats(
     # Parse extensions filter
     ext_list = None
     if extensions:
-        ext_list = [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",") if e.strip()]
+        ext_list = [
+            f".{e.strip().lower().lstrip('.')}"
+            for e in extensions.split(",")
+            if e.strip()
+        ]
 
     query = select(
         FileStats.extension,
@@ -136,7 +146,11 @@ async def get_file_type_stats(
     if ext_list:
         query = query.where(FileStats.extension.in_(ext_list))
 
-    query = query.group_by(FileStats.extension).order_by(func.sum(FileStats.size).desc()).limit(limit)
+    query = (
+        query.group_by(FileStats.extension)
+        .order_by(func.sum(FileStats.size).desc())
+        .limit(limit)
+    )
 
     result = await db.execute(query)
     rows = result.all()
@@ -169,7 +183,7 @@ async def get_available_extensions(db: AsyncSession = Depends(get_db)):
     extensions = [row[0] for row in result.all() if row[0]]
 
     # Remove the leading dot for cleaner display
-    return [ext.lstrip('.') for ext in extensions]
+    return [ext.lstrip(".") for ext in extensions]
 
 
 @router.get("/history", response_model=HistoryResponse)
@@ -221,7 +235,9 @@ async def get_history(
 @router.get("/codecs", response_model=CodecSummary)
 async def get_codec_stats(
     limit: int = Query(default=10, ge=1, le=50),
-    extensions: Optional[str] = Query(None, description="Comma-separated extensions filter"),
+    extensions: Optional[str] = Query(
+        None, description="Comma-separated extensions filter"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get codec statistics for video and audio files"""
@@ -229,7 +245,11 @@ async def get_codec_stats(
     # Parse extensions filter
     ext_list = None
     if extensions:
-        ext_list = [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",") if e.strip()]
+        ext_list = [
+            f".{e.strip().lower().lstrip('.')}"
+            for e in extensions.split(",")
+            if e.strip()
+        ]
 
     # Query video codecs
     video_query = select(
@@ -242,9 +262,11 @@ async def get_codec_stats(
     if ext_list:
         video_query = video_query.where(FileStats.extension.in_(ext_list))
 
-    video_query = video_query.group_by(FileStats.video_codec).order_by(
-        func.count(FileStats.id).desc()
-    ).limit(limit)
+    video_query = (
+        video_query.group_by(FileStats.video_codec)
+        .order_by(func.count(FileStats.id).desc())
+        .limit(limit)
+    )
 
     video_result = await db.execute(video_query)
     video_rows = video_result.all()
@@ -260,9 +282,11 @@ async def get_codec_stats(
     if ext_list:
         audio_query = audio_query.where(FileStats.extension.in_(ext_list))
 
-    audio_query = audio_query.group_by(FileStats.audio_codec).order_by(
-        func.count(FileStats.id).desc()
-    ).limit(limit)
+    audio_query = (
+        audio_query.group_by(FileStats.audio_codec)
+        .order_by(func.count(FileStats.id).desc())
+        .limit(limit)
+    )
 
     audio_result = await db.execute(audio_query)
     audio_rows = audio_result.all()
@@ -272,8 +296,12 @@ async def get_codec_stats(
     total_audio_size = sum(row.total_size or 0 for row in audio_rows)
 
     # Count total files with codec info
-    video_count_query = select(func.count(FileStats.id)).where(FileStats.video_codec.isnot(None))
-    audio_count_query = select(func.count(FileStats.id)).where(FileStats.audio_codec.isnot(None))
+    video_count_query = select(func.count(FileStats.id)).where(
+        FileStats.video_codec.isnot(None)
+    )
+    audio_count_query = select(func.count(FileStats.id)).where(
+        FileStats.audio_codec.isnot(None)
+    )
 
     if ext_list:
         video_count_query = video_count_query.where(FileStats.extension.in_(ext_list))
@@ -292,7 +320,9 @@ async def get_codec_stats(
             total_size_formatted=format_size(row.total_size or 0),
             total_duration=row.total_duration or 0.0,
             total_duration_formatted=format_duration(row.total_duration or 0.0),
-            percentage=(row.total_size / total_video_size * 100) if total_video_size > 0 else 0,
+            percentage=(
+                (row.total_size / total_video_size * 100) if total_video_size > 0 else 0
+            ),
         )
         for row in video_rows
     ]
@@ -306,7 +336,9 @@ async def get_codec_stats(
             total_size_formatted=format_size(row.total_size or 0),
             total_duration=row.total_duration or 0.0,
             total_duration_formatted=format_duration(row.total_duration or 0.0),
-            percentage=(row.total_size / total_audio_size * 100) if total_audio_size > 0 else 0,
+            percentage=(
+                (row.total_size / total_audio_size * 100) if total_audio_size > 0 else 0
+            ),
         )
         for row in audio_rows
     ]
@@ -322,7 +354,9 @@ async def get_codec_stats(
 @router.get("/codecs-by-extension", response_model=CodecsByExtensionResponse)
 async def get_codecs_by_extension(
     limit: int = Query(default=10, ge=1, le=50, description="Max extensions to return"),
-    codec_limit: int = Query(default=5, ge=1, le=20, description="Max codecs per extension"),
+    codec_limit: int = Query(
+        default=5, ge=1, le=20, description="Max codecs per extension"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get codec distribution grouped by file extension.
@@ -331,16 +365,16 @@ async def get_codecs_by_extension(
     """
 
     # Step 1: Get top extensions by file count (only those with codec info)
-    ext_query = select(
-        FileStats.extension,
-        func.count(FileStats.id).label("file_count"),
-    ).where(
-        FileStats.video_codec.isnot(None)
-    ).group_by(
-        FileStats.extension
-    ).order_by(
-        func.count(FileStats.id).desc()
-    ).limit(limit)
+    ext_query = (
+        select(
+            FileStats.extension,
+            func.count(FileStats.id).label("file_count"),
+        )
+        .where(FileStats.video_codec.isnot(None))
+        .group_by(FileStats.extension)
+        .order_by(func.count(FileStats.id).desc())
+        .limit(limit)
+    )
 
     ext_result = await db.execute(ext_query)
     top_extensions = ext_result.all()
@@ -352,17 +386,19 @@ async def get_codecs_by_extension(
         total_files = ext_row.file_count
 
         # Step 2: Get video codec distribution for this extension
-        video_query = select(
-            FileStats.video_codec,
-            func.count(FileStats.id).label("count"),
-        ).where(
-            FileStats.extension == ext_row.extension,
-            FileStats.video_codec.isnot(None),
-        ).group_by(
-            FileStats.video_codec
-        ).order_by(
-            func.count(FileStats.id).desc()
-        ).limit(codec_limit)
+        video_query = (
+            select(
+                FileStats.video_codec,
+                func.count(FileStats.id).label("count"),
+            )
+            .where(
+                FileStats.extension == ext_row.extension,
+                FileStats.video_codec.isnot(None),
+            )
+            .group_by(FileStats.video_codec)
+            .order_by(func.count(FileStats.id).desc())
+            .limit(codec_limit)
+        )
 
         video_result = await db.execute(video_query)
         video_rows = video_result.all()
@@ -378,17 +414,19 @@ async def get_codecs_by_extension(
         ]
 
         # Step 3: Get audio codec distribution for this extension
-        audio_query = select(
-            FileStats.audio_codec,
-            func.count(FileStats.id).label("count"),
-        ).where(
-            FileStats.extension == ext_row.extension,
-            FileStats.audio_codec.isnot(None),
-        ).group_by(
-            FileStats.audio_codec
-        ).order_by(
-            func.count(FileStats.id).desc()
-        ).limit(codec_limit)
+        audio_query = (
+            select(
+                FileStats.audio_codec,
+                func.count(FileStats.id).label("count"),
+            )
+            .where(
+                FileStats.extension == ext_row.extension,
+                FileStats.audio_codec.isnot(None),
+            )
+            .group_by(FileStats.audio_codec)
+            .order_by(func.count(FileStats.id).desc())
+            .limit(codec_limit)
+        )
 
         audio_result = await db.execute(audio_query)
         audio_rows = audio_result.all()
@@ -440,15 +478,17 @@ async def get_codec_tree(
         """재귀적으로 코덱 트리 구축"""
 
         # 폴더 내 파일들의 코덱 정보 집계
-        file_query = select(
-            FileStats.video_codec,
-            FileStats.audio_codec,
-            func.count(FileStats.id).label("count"),
-        ).where(
-            FileStats.folder_path == folder.path
-        ).group_by(
-            FileStats.video_codec,
-            FileStats.audio_codec,
+        file_query = (
+            select(
+                FileStats.video_codec,
+                FileStats.audio_codec,
+                func.count(FileStats.id).label("count"),
+            )
+            .where(FileStats.folder_path == folder.path)
+            .group_by(
+                FileStats.video_codec,
+                FileStats.audio_codec,
+            )
         )
 
         file_result = await db.execute(file_query)
@@ -461,31 +501,48 @@ async def get_codec_tree(
 
         for row in codec_rows:
             if row.video_codec:
-                video_codecs[row.video_codec] = video_codecs.get(row.video_codec, 0) + row.count
+                video_codecs[row.video_codec] = (
+                    video_codecs.get(row.video_codec, 0) + row.count
+                )
                 files_with_codec += row.count
             if row.audio_codec:
-                audio_codecs[row.audio_codec] = audio_codecs.get(row.audio_codec, 0) + row.count
+                audio_codecs[row.audio_codec] = (
+                    audio_codecs.get(row.audio_codec, 0) + row.count
+                )
 
         # 최다 코덱 찾기
-        top_video = max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
-        top_audio = max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
+        top_video = (
+            max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
+        )
+        top_audio = (
+            max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
+        )
 
-        codec_summary = FolderCodecSummary(
-            total_files=folder.file_count,
-            files_with_codec=files_with_codec,
-            video_codecs=video_codecs,
-            audio_codecs=audio_codecs,
-            top_video_codec=top_video,
-            top_audio_codec=top_audio,
-        ) if video_codecs or audio_codecs else None
+        codec_summary = (
+            FolderCodecSummary(
+                total_files=folder.file_count,
+                files_with_codec=files_with_codec,
+                video_codecs=video_codecs,
+                audio_codecs=audio_codecs,
+                top_video_codec=top_video,
+                top_audio_codec=top_audio,
+            )
+            if video_codecs or audio_codecs
+            else None
+        )
 
         # 파일 목록 (옵션)
         files = None
         if include_files:
-            files_query = select(FileStats).where(
-                FileStats.folder_path == folder.path,
-                FileStats.video_codec.isnot(None),
-            ).order_by(FileStats.name).limit(100)
+            files_query = (
+                select(FileStats)
+                .where(
+                    FileStats.folder_path == folder.path,
+                    FileStats.video_codec.isnot(None),
+                )
+                .order_by(FileStats.name)
+                .limit(100)
+            )
 
             files_result = await db.execute(files_query)
             file_list = files_result.scalars().all()
@@ -534,8 +591,16 @@ async def get_codec_tree(
 
             # 합산 후 codec_summary 업데이트
             if video_codecs or audio_codecs:
-                top_video = max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
-                top_audio = max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
+                top_video = (
+                    max(video_codecs.items(), key=lambda x: x[1])[0]
+                    if video_codecs
+                    else None
+                )
+                top_audio = (
+                    max(audio_codecs.items(), key=lambda x: x[1])[0]
+                    if audio_codecs
+                    else None
+                )
                 codec_summary = FolderCodecSummary(
                     total_files=folder.file_count,
                     files_with_codec=files_with_codec,
@@ -602,18 +667,21 @@ async def get_codec_folder_detail(
 
     if not folder:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail=f"Folder not found: {decoded_path}")
 
     # 현재 폴더의 코덱 통계
-    file_query = select(
-        FileStats.video_codec,
-        FileStats.audio_codec,
-        func.count(FileStats.id).label("count"),
-    ).where(
-        FileStats.folder_path == decoded_path
-    ).group_by(
-        FileStats.video_codec,
-        FileStats.audio_codec,
+    file_query = (
+        select(
+            FileStats.video_codec,
+            FileStats.audio_codec,
+            func.count(FileStats.id).label("count"),
+        )
+        .where(FileStats.folder_path == decoded_path)
+        .group_by(
+            FileStats.video_codec,
+            FileStats.audio_codec,
+        )
     )
 
     file_result = await db.execute(file_query)
@@ -625,29 +693,46 @@ async def get_codec_folder_detail(
 
     for row in codec_rows:
         if row.video_codec:
-            video_codecs[row.video_codec] = video_codecs.get(row.video_codec, 0) + row.count
+            video_codecs[row.video_codec] = (
+                video_codecs.get(row.video_codec, 0) + row.count
+            )
             files_with_codec += row.count
         if row.audio_codec:
-            audio_codecs[row.audio_codec] = audio_codecs.get(row.audio_codec, 0) + row.count
+            audio_codecs[row.audio_codec] = (
+                audio_codecs.get(row.audio_codec, 0) + row.count
+            )
 
-    top_video = max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
-    top_audio = max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
+    top_video = (
+        max(video_codecs.items(), key=lambda x: x[1])[0] if video_codecs else None
+    )
+    top_audio = (
+        max(audio_codecs.items(), key=lambda x: x[1])[0] if audio_codecs else None
+    )
 
-    codec_summary = FolderCodecSummary(
-        total_files=folder.file_count,
-        files_with_codec=files_with_codec,
-        video_codecs=video_codecs,
-        audio_codecs=audio_codecs,
-        top_video_codec=top_video,
-        top_audio_codec=top_audio,
-    ) if video_codecs or audio_codecs else None
+    codec_summary = (
+        FolderCodecSummary(
+            total_files=folder.file_count,
+            files_with_codec=files_with_codec,
+            video_codecs=video_codecs,
+            audio_codecs=audio_codecs,
+            top_video_codec=top_video,
+            top_audio_codec=top_audio,
+        )
+        if video_codecs or audio_codecs
+        else None
+    )
 
     # 파일 목록
     files = None
     if include_files:
-        files_query = select(FileStats).where(
-            FileStats.folder_path == decoded_path,
-        ).order_by(FileStats.name).limit(200)
+        files_query = (
+            select(FileStats)
+            .where(
+                FileStats.folder_path == decoded_path,
+            )
+            .order_by(FileStats.name)
+            .limit(200)
+        )
 
         files_result = await db.execute(files_query)
         file_list = files_result.scalars().all()
@@ -679,44 +764,58 @@ async def get_codec_folder_detail(
     children = []
     for child in child_folders:
         # 자식 폴더의 코덱 통계도 간략히 조회
-        child_codec_query = select(
-            FileStats.video_codec,
-            func.count(FileStats.id).label("count"),
-        ).where(
-            FileStats.folder_path == child.path,
-            FileStats.video_codec.isnot(None),
-        ).group_by(FileStats.video_codec)
+        child_codec_query = (
+            select(
+                FileStats.video_codec,
+                func.count(FileStats.id).label("count"),
+            )
+            .where(
+                FileStats.folder_path == child.path,
+                FileStats.video_codec.isnot(None),
+            )
+            .group_by(FileStats.video_codec)
+        )
 
         child_codec_result = await db.execute(child_codec_query)
         child_codec_rows = child_codec_result.fetchall()
 
         child_video_codecs = {row.video_codec: row.count for row in child_codec_rows}
-        child_top_video = max(child_video_codecs.items(), key=lambda x: x[1])[0] if child_video_codecs else None
+        child_top_video = (
+            max(child_video_codecs.items(), key=lambda x: x[1])[0]
+            if child_video_codecs
+            else None
+        )
 
-        child_codec_summary = FolderCodecSummary(
-            total_files=child.file_count,
-            files_with_codec=sum(child_video_codecs.values()),
-            video_codecs=child_video_codecs,
-            audio_codecs={},
-            top_video_codec=child_top_video,
-            top_audio_codec=None,
-        ) if child_video_codecs else None
+        child_codec_summary = (
+            FolderCodecSummary(
+                total_files=child.file_count,
+                files_with_codec=sum(child_video_codecs.values()),
+                video_codecs=child_video_codecs,
+                audio_codecs={},
+                top_video_codec=child_top_video,
+                top_audio_codec=None,
+            )
+            if child_video_codecs
+            else None
+        )
 
-        children.append(CodecTreeNode(
-            id=child.id,
-            name=child.name,
-            path=child.path,
-            size=child.total_size,
-            size_formatted=format_size(child.total_size),
-            file_count=child.file_count,
-            folder_count=child.folder_count,
-            duration=child.total_duration,
-            duration_formatted=format_duration(child.total_duration),
-            depth=child.depth,
-            codec_summary=child_codec_summary,
-            children=[],
-            files=None,
-        ))
+        children.append(
+            CodecTreeNode(
+                id=child.id,
+                name=child.name,
+                path=child.path,
+                size=child.total_size,
+                size_formatted=format_size(child.total_size),
+                file_count=child.file_count,
+                folder_count=child.folder_count,
+                duration=child.total_duration,
+                duration_formatted=format_duration(child.total_duration),
+                depth=child.depth,
+                codec_summary=child_codec_summary,
+                children=[],
+                files=None,
+            )
+        )
 
     return CodecTreeNode(
         id=folder.id,

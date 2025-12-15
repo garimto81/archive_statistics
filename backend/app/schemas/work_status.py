@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, computed_field
-from typing import Optional, List
 from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, computed_field
 
 
 class ArchiveBase(BaseModel):

@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, BigInteger
-from sqlalchemy.orm import relationship
 from datetime import datetime
+
+from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
+
 from app.core.database import Base
 
 
@@ -22,7 +24,9 @@ class FolderStats(Base):
     total_duration = Column(Float, default=0.0)  # seconds
 
     # Work Status 연결 (명시적 FK - fuzzy matching 대체)
-    work_status_id = Column(Integer, ForeignKey("work_statuses.id"), nullable=True, index=True)
+    work_status_id = Column(
+        Integer, ForeignKey("work_statuses.id"), nullable=True, index=True
+    )
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

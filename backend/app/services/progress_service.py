@@ -25,18 +25,19 @@ Progress Service - 통합 진행률 계산
 ===================
 """
 
-import re
 import logging
-from typing import Optional, List, Dict, Any, Set, Tuple
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+import re
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from app.models.file_stats import FolderStats, FileStats
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.file_stats import FileStats, FolderStats
 from app.models.hand_analysis import HandAnalysis
 from app.models.work_status import WorkStatus
 
 # 중복 제거: format_size, format_duration을 공통 utils에서 import
-from app.services.utils import format_size, format_duration
+from app.services.utils import format_duration, format_size
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,9 @@ class ProgressService:
 
         # Issue #49: archive_stats (새로운 일관된 통계)
         archive_stats = await self._calculate_archive_stats(db)
-        logger.info(f"Archive stats (Issue #49): total_files={archive_stats['total_files']}")
+        logger.info(
+            f"Archive stats (Issue #49): total_files={archive_stats['total_files']}"
+        )
 
         # Step 4: 폴더 트리 구축
         if path:
@@ -162,7 +165,7 @@ class ProgressService:
 
         for folder in folders:
             # v1.29.0: 숨김 폴더 필터링 (이름이 .으로 시작)
-            if not include_hidden and folder.name.startswith('.'):
+            if not include_hidden and folder.name.startswith("."):
                 continue
 
             folder_data, folder_used_ids = await self._build_folder_progress(
@@ -769,8 +772,12 @@ class ProgressService:
         parent_work_status_ids: Optional[
             Set[int]
         ] = None,  # 상위 폴더에서 매칭된 work_status ID들
-        root_stats: Optional[Dict[str, Any]] = None,  # Issue #29: 루트 전체 통계 (deprecated)
-        archive_stats: Optional[Dict[str, Any]] = None,  # Issue #49: 일관된 아카이브 통계
+        root_stats: Optional[
+            Dict[str, Any]
+        ] = None,  # Issue #29: 루트 전체 통계 (deprecated)
+        archive_stats: Optional[
+            Dict[str, Any]
+        ] = None,  # Issue #49: 일관된 아카이브 통계
         include_hidden: bool = False,  # v1.29.0: 숨김 파일/폴더 포함
     ) -> Tuple[Dict[str, Any], Set[int]]:
         """폴더 데이터 구축 (archive db + metadata db + codecs 통합)
@@ -806,34 +813,39 @@ class ProgressService:
         # depth 제한과 무관하게 전체 하위 파일을 DB에서 직접 집계
         # v1.29.0: include_hidden 필터 추가
         if extensions or not include_hidden:
-            filtered_query = (
-                select(
-                    func.count(FileStats.id).label("count"),
-                    func.coalesce(func.sum(FileStats.size), 0).label("total_size"),
-                    func.coalesce(func.sum(FileStats.duration), 0).label("total_duration"),
-                )
-                .where(FileStats.folder_path.startswith(folder.path))
-            )
+            filtered_query = select(
+                func.count(FileStats.id).label("count"),
+                func.coalesce(func.sum(FileStats.size), 0).label("total_size"),
+                func.coalesce(func.sum(FileStats.duration), 0).label("total_duration"),
+            ).where(FileStats.folder_path.startswith(folder.path))
             # 확장자 필터 적용
             if extensions:
-                filtered_query = filtered_query.where(FileStats.extension.in_(extensions))
+                filtered_query = filtered_query.where(
+                    FileStats.extension.in_(extensions)
+                )
             # v1.29.0: 숨김 파일 필터링 (이름이 .으로 시작)
             if not include_hidden:
-                filtered_query = filtered_query.where(~FileStats.name.startswith('.'))
+                filtered_query = filtered_query.where(~FileStats.name.startswith("."))
             filtered_result = await db.execute(filtered_query)
             filtered_row = filtered_result.one()
             folder_dict["filtered_file_count"] = filtered_row.count or 0
             folder_dict["filtered_size"] = filtered_row.total_size or 0
-            folder_dict["filtered_size_formatted"] = format_size(filtered_row.total_size or 0)
+            folder_dict["filtered_size_formatted"] = format_size(
+                filtered_row.total_size or 0
+            )
             folder_dict["filtered_duration"] = filtered_row.total_duration or 0
-            folder_dict["filtered_duration_formatted"] = format_duration(filtered_row.total_duration or 0)
+            folder_dict["filtered_duration_formatted"] = format_duration(
+                filtered_row.total_duration or 0
+            )
         else:
             # 필터 없으면 전체 값 사용 (include_hidden=True, extensions=None)
             folder_dict["filtered_file_count"] = folder.file_count
             folder_dict["filtered_size"] = folder.total_size
             folder_dict["filtered_size_formatted"] = format_size(folder.total_size)
             folder_dict["filtered_duration"] = folder.total_duration
-            folder_dict["filtered_duration_formatted"] = format_duration(folder.total_duration)
+            folder_dict["filtered_duration_formatted"] = format_duration(
+                folder.total_duration
+            )
 
         # Issue #29: 루트 전체 대비 비율 정보 (NAS/Sheets 데이터 분리 표시용)
         # deprecated: archive_stats 사용 권장
@@ -866,9 +878,13 @@ class ProgressService:
             folder_dict["archive_stats"] = {
                 "total_files": archive_total_files,
                 "total_size": archive_total_size,
-                "total_size_formatted": archive_stats.get("total_size_formatted", "0 B"),
+                "total_size_formatted": archive_stats.get(
+                    "total_size_formatted", "0 B"
+                ),
                 "total_duration": archive_stats.get("total_duration", 0),
-                "total_duration_formatted": archive_stats.get("total_duration_formatted", "0:00:00"),
+                "total_duration_formatted": archive_stats.get(
+                    "total_duration_formatted", "0:00:00"
+                ),
                 "sheets_total_videos": archive_stats.get("sheets_total_videos", 0),
                 "sheets_total_done": archive_stats.get("sheets_total_done", 0),
                 # 현재 폴더의 전체 대비 비율
@@ -1092,7 +1108,7 @@ class ProgressService:
 
             for child in child_folders:
                 # v1.29.0: 숨김 폴더 필터링 (이름이 .으로 시작)
-                if not include_hidden and child.name.startswith('.'):
+                if not include_hidden and child.name.startswith("."):
                     continue
 
                 # ⚠️ Cascading Match 방지:
@@ -1165,8 +1181,12 @@ class ProgressService:
 
         # Note: filtered_* 값은 이미 DB 쿼리에서 하위 폴더 포함하여 계산됨
         # 아래 코드는 동일한 값을 재포맷하므로 결과에 영향 없음 (레거시 호환성)
-        folder_dict["filtered_size_formatted"] = format_size(folder_dict["filtered_size"])
-        folder_dict["filtered_duration_formatted"] = format_duration(folder_dict["filtered_duration"])
+        folder_dict["filtered_size_formatted"] = format_size(
+            folder_dict["filtered_size"]
+        )
+        folder_dict["filtered_duration_formatted"] = format_duration(
+            folder_dict["filtered_duration"]
+        )
 
         # work_summary 로직 (Cascading Match Prevention)
         # ⚠️ 핵심 수정 (Issue #24): 직접 매칭이 있는 폴더만 work_summary 표시
@@ -1308,7 +1328,7 @@ class ProgressService:
 
         # v1.29.0: 숨김 파일 필터링 (이름이 .으로 시작)
         if not include_hidden:
-            query = query.where(~FileStats.name.startswith('.'))
+            query = query.where(~FileStats.name.startswith("."))
 
         file_result = await db.execute(query.order_by(FileStats.name).limit(200))
         files = file_result.scalars().all()
@@ -1464,7 +1484,11 @@ class ProgressService:
         # 파일 매칭
         if include_files:
             files_progress = await self._get_files_with_matching(
-                db, folder.path, hand_data, None, False  # extensions=None, include_hidden=False
+                db,
+                folder.path,
+                hand_data,
+                None,
+                False,  # extensions=None, include_hidden=False
             )
             folder_dict["files"] = files_progress
 

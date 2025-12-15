@@ -4,11 +4,12 @@
 폴더와 WorkStatus를 명시적으로 연결/해제하는 엔드포인트
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
 from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.file_stats import FolderStats
@@ -19,19 +20,23 @@ router = APIRouter()
 
 # ==================== Schemas ====================
 
+
 class FolderMappingCreate(BaseModel):
     """폴더-작업 연결 요청"""
+
     folder_path: str
     work_status_id: int
 
 
 class FolderMappingBulk(BaseModel):
     """대량 연결 요청"""
+
     mappings: List[FolderMappingCreate]
 
 
 class FolderMappingResponse(BaseModel):
     """연결 결과"""
+
     folder_id: int
     folder_path: str
     folder_name: str
@@ -41,6 +46,7 @@ class FolderMappingResponse(BaseModel):
 
 class UnmappedFolderResponse(BaseModel):
     """연결되지 않은 폴더"""
+
     id: int
     path: str
     name: str
@@ -50,6 +56,7 @@ class UnmappedFolderResponse(BaseModel):
 
 class WorkStatusOption(BaseModel):
     """작업 선택 옵션"""
+
     id: int
     category: str
     archive_name: Optional[str]
@@ -58,6 +65,7 @@ class WorkStatusOption(BaseModel):
 
 
 # ==================== Endpoints ====================
+
 
 @router.get("/unmapped", response_model=List[UnmappedFolderResponse])
 async def get_unmapped_folders(
@@ -181,7 +189,9 @@ async def connect_folder_to_work_status(
     folder = folder_result.scalar_one_or_none()
 
     if not folder:
-        raise HTTPException(status_code=404, detail=f"폴더를 찾을 수 없습니다: {mapping.folder_path}")
+        raise HTTPException(
+            status_code=404, detail=f"폴더를 찾을 수 없습니다: {mapping.folder_path}"
+        )
 
     # WorkStatus 확인
     ws_result = await db.execute(
@@ -190,7 +200,10 @@ async def connect_folder_to_work_status(
     ws = ws_result.scalar_one_or_none()
 
     if not ws:
-        raise HTTPException(status_code=404, detail=f"WorkStatus를 찾을 수 없습니다: {mapping.work_status_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"WorkStatus를 찾을 수 없습니다: {mapping.work_status_id}",
+        )
 
     # 연결
     folder.work_status_id = mapping.work_status_id
@@ -255,7 +268,9 @@ async def disconnect_folder(
     folder = folder_result.scalar_one_or_none()
 
     if not folder:
-        raise HTTPException(status_code=404, detail=f"폴더를 찾을 수 없습니다: {folder_id}")
+        raise HTTPException(
+            status_code=404, detail=f"폴더를 찾을 수 없습니다: {folder_id}"
+        )
 
     folder.work_status_id = None
     await db.commit()
@@ -303,13 +318,15 @@ async def auto_match_folders(
         if matched:
             # 가장 좋은 매칭만 사용
             best_match = matched[0]
-            matches.append({
-                "folder_id": folder.id,
-                "folder_path": folder.path,
-                "folder_name": folder.name,
-                "work_status_id": best_match["id"],
-                "work_status_category": best_match["category"],
-            })
+            matches.append(
+                {
+                    "folder_id": folder.id,
+                    "folder_path": folder.path,
+                    "folder_name": folder.name,
+                    "work_status_id": best_match["id"],
+                    "work_status_category": best_match["category"],
+                }
+            )
 
             if not dry_run:
                 folder.work_status_id = best_match["id"]

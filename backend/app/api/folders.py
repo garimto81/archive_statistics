@@ -1,19 +1,22 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 from typing import List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
-from app.models.file_stats import FolderStats, FileStats
-from app.schemas.stats import FolderTreeNode, FolderDetails, FileTypeStats
-from app.services.utils import format_size, format_duration
+from app.models.file_stats import FileStats, FolderStats
+from app.schemas.stats import FileTypeStats, FolderDetails, FolderTreeNode
+from app.services.utils import format_duration, format_size
 
 
 def parse_extensions(extensions: Optional[str]) -> Optional[List[str]]:
     """Parse comma-separated extensions into list with leading dots"""
     if not extensions:
         return None
-    return [f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",") if e.strip()]
+    return [
+        f".{e.strip().lower().lstrip('.')}" for e in extensions.split(",") if e.strip()
+    ]
 
 
 router = APIRouter()
@@ -23,7 +26,9 @@ router = APIRouter()
 async def get_folder_tree(
     path: Optional[str] = Query(default=None, description="Parent path to start from"),
     depth: int = Query(default=2, ge=1, le=10, description="Depth of tree to return"),
-    extensions: Optional[str] = Query(default=None, description="Comma-separated extensions filter"),
+    extensions: Optional[str] = Query(
+        default=None, description="Comma-separated extensions filter"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """Get folder tree structure with optional extension filter"""
@@ -121,9 +126,7 @@ async def get_folder_details(
     """Get detailed information for a specific folder"""
 
     # Get folder
-    result = await db.execute(
-        select(FolderStats).where(FolderStats.path == path)
-    )
+    result = await db.execute(select(FolderStats).where(FolderStats.path == path))
     folder = result.scalar_one_or_none()
 
     if not folder:
@@ -179,9 +182,7 @@ async def get_top_folders(
     """Get top folders by size"""
 
     result = await db.execute(
-        select(FolderStats)
-        .order_by(FolderStats.total_size.desc())
-        .limit(limit)
+        select(FolderStats).order_by(FolderStats.total_size.desc()).limit(limit)
     )
     folders = result.scalars().all()
 

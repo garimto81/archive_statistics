@@ -1,14 +1,15 @@
 """Archive Statistics Dashboard - FastAPI Application"""
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import api_router
 from app.core.config import settings
 from app.core.database import create_tables
-from app.api import api_router
-from app.services.sheets_sync import sheets_sync_service
 from app.services.hand_analysis_sync import hand_analysis_sync_service
+from app.services.sheets_sync import sheets_sync_service
 
 
 @asynccontextmanager

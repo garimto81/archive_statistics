@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Version**: 1.34.0 | **Last Updated**: 2025-12-12
+**Version**: 1.36.0 | **Last Updated**: 2025-12-15
 
 ## Project Overview
 
@@ -19,9 +19,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Backend 실행 | `cd backend && uvicorn app.main:app --reload --port 8000` |
 | Frontend 실행 | `cd frontend && npm run dev` |
 | 테스트 (단일) | `cd backend && pytest tests/test_api.py -v` |
+| 테스트 (특정 함수) | `cd backend && pytest tests/test_api.py -v -k "test_stats"` |
 | 린트 자동수정 | `cd backend && black app/ && isort app/` |
 | Frontend 린트 | `cd frontend && npm run lint` |
 | E2E 테스트 | `cd frontend && npm run test:e2e` |
+| E2E (UI 모드) | `cd frontend && npm run test:e2e:ui` |
+| E2E (Chromium) | `cd frontend && npm run test:e2e:chromium` |
 | Docker 재배포 | `docker-compose down && docker-compose build --no-cache && docker-compose up -d` |
 
 ---
@@ -47,6 +50,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `GET /api/work-status` | 작업 현황 |
 | `POST /api/scan` | NAS 스캔 |
 | `GET /api/sync/status` | Sheets 동기화 상태 |
+
+### 주요 Query Parameters
+
+| Endpoint | Parameter | Type | Description |
+|----------|-----------|------|-------------|
+| `/api/progress/tree` | `path` | string | 시작 경로 (기본: root) |
+| `/api/progress/tree` | `depth` | int | 트리 깊이 (기본: 2) |
+| `/api/progress/tree` | `include_files` | bool | 파일 포함 여부 |
+| `/api/progress/tree` | `include_hidden` | bool | 숨김 항목 포함 |
+| `/api/progress/tree` | `extensions` | string | 확장자 필터 (콤마 구분) |
 
 ---
 
@@ -78,6 +91,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `frontend/src/components/MasterFolderTree/index.tsx` | 통합 트리 UI (Dashboard/Folders/Statistics 공용) ⭐ |
 | `frontend/src/components/MasterFolderDetail/index.tsx` | 폴더 상세 패널 |
 | `backend/app/services/sheets_sync.py` | Google Sheets 동기화 |
+| `frontend/src/types/index.ts` | TypeScript 타입 정의 (핵심) |
+
+### MasterFolderTree Props System
+
+통합 트리 컴포넌트는 Props로 페이지별 기능을 제어:
+
+| Props | Type | 용도 |
+|-------|------|------|
+| `showProgressBar` | boolean | Dashboard에서 진행률 바 표시 |
+| `showWorkBadge` | boolean | 작업 상태 뱃지 표시 |
+| `showFiles` | boolean | 파일 목록 포함 |
+| `showCodecBadge` | boolean | Statistics에서 코덱 뱃지 표시 |
+| `enableLazyLoading` | boolean | 하위 폴더 지연 로드 |
+| `detailPanelMode` | string | 상세 패널 모드 (none/progress/codec/explorer) |
 
 ### Block Agent System
 
@@ -85,10 +112,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | Block ID | Lines | Description |
 |----------|-------|-------------|
-| `progress.utils` | 25-55 | 정규화/유사도 헬퍼 |
-| `progress.matcher` | 162-285 | 폴더-카테고리 매칭 |
-| `progress.aggregator` | 325-642 | 하이어라키 합산 |
-| `progress.validator` | 478-559 | 매칭 검증/진행률 계산 (PRD-0041) |
+| `progress.utils` | 43-76 | 정규화/유사도 헬퍼 |
+| `progress.archive_stats` | 266-362 | 아카이브 통계 (Issue #49) ⭐ |
+| `progress.matcher` | 474-597 | 폴더-카테고리 매칭 |
+| `progress.validator` | 601-682 | 매칭 검증/진행률 계산 |
+| `progress.aggregator` | 735-1121 | 하이어라키 합산/코덱집계 |
+| `progress.folder_detail` | 1196-1370 | 폴더 상세 조회 |
 
 ---
 
@@ -132,6 +161,11 @@ Backend (FastAPI + SQLAlchemy + aiosqlite)
 
 | 버전 | 날짜 | 변경 |
 |------|------|------|
+| 1.36.0 | 2025-12-15 | CLAUDE.md 개선: Block Index 라인 번호 업데이트, MasterFolderTree Props 추가, API 파라미터 문서화 |
+| 1.35.3 | 2025-12-13 | UI 표시 수정: root_stats.total_files → folder.file_count (일관된 표시) |
+| 1.35.2 | 2025-12-13 | Lazy loading 버그 수정: 하위 폴더 로드 시 childData 직접 사용 |
+| 1.35.1 | 2025-12-13 | filtered_* 버그 수정: startswith()로 하위 폴더 포함 집계 |
+| 1.35.0 | 2025-12-13 | 필터 캐시 최적화 (staleTime 30초), filtered_file_count/size 동적 계산 |
 | 1.34.0 | 2025-12-12 | PRD-0041 완료: is_complete/mismatch UI 표시 (#42, PR #43/#44) |
 | 1.33.0 | 2025-12-12 | progress.validator 블록 추가 (PRD-0041 Phase 1, #42) |
 | 1.32.0 | 2025-12-12 | WorkStatus 기본 탭 Workers로 변경 (#40) |

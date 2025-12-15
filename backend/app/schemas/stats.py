@@ -1,6 +1,7 @@
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel
 
 
 class StatsSummary(BaseModel):
@@ -131,6 +132,7 @@ class CodecsByExtensionResponse(BaseModel):
 
 
 # === Codec Tree (폴더별 코덱 정보) ===
+
 
 class FileCodecInfo(BaseModel):
     """파일별 코덱 정보"""

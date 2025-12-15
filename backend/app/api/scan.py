@@ -1,16 +1,17 @@
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List, Optional
 from datetime import datetime, timedelta
+from typing import List, Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.file_stats import ScanHistory
 from app.schemas.scan import (
-    ScanStatus,
     ScanHistoryResponse,
     ScanStartRequest,
     ScanStartResponse,
+    ScanStatus,
 )
 from app.services.scanner import ArchiveScanner
 
@@ -83,10 +84,7 @@ async def start_scan(
 ):
     """Start a new archive scan"""
     if _scan_state["is_scanning"]:
-        raise HTTPException(
-            status_code=409,
-            detail="A scan is already in progress"
-        )
+        raise HTTPException(status_code=409, detail="A scan is already in progress")
 
     # Create scan history record
     scan_history = ScanHistory(
@@ -105,7 +103,9 @@ async def start_scan(
     _scan_state["current_folder"] = None
     _scan_state["files_scanned"] = 0
     _scan_state["started_at"] = datetime.utcnow()
-    _scan_state["logs"] = [f"[{datetime.utcnow().strftime('%H:%M:%S')}] 🚀 Scan started"]
+    _scan_state["logs"] = [
+        f"[{datetime.utcnow().strftime('%H:%M:%S')}] 🚀 Scan started"
+    ]
     _scan_state["media_files_processed"] = 0
     _scan_state["total_duration_found"] = 0.0
 
@@ -160,10 +160,7 @@ async def run_scan(scan_id: int, path: Optional[str] = None, scan_type: str = "f
 async def stop_scan():
     """Stop current scan"""
     if not _scan_state["is_scanning"]:
-        raise HTTPException(
-            status_code=400,
-            detail="No scan is currently running"
-        )
+        raise HTTPException(status_code=400, detail="No scan is currently running")
 
     # Set flag to stop scan (scanner should check this)
     _scan_state["is_scanning"] = False
@@ -177,8 +174,6 @@ async def get_scan_history(
 ):
     """Get scan history"""
     result = await db.execute(
-        select(ScanHistory)
-        .order_by(ScanHistory.started_at.desc())
-        .limit(limit)
+        select(ScanHistory).order_by(ScanHistory.started_at.desc()).limit(limit)
     )
     return result.scalars().all()

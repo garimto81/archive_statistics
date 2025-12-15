@@ -1,14 +1,15 @@
 """Archive Scanner Service"""
 
-import os
 import asyncio
-import subprocess
 import json
+import os
+import subprocess
 from datetime import datetime
-from typing import Dict, Optional, Any
 from pathlib import Path
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any, Dict, Optional
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.file_stats import FileStats, FolderStats
@@ -16,12 +17,28 @@ from app.services.utils import get_mime_type
 
 # Media extensions (for duration extraction via ffprobe)
 MEDIA_EXTENSIONS = {
-    '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg',
-    '.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a', '.mxf'
+    ".mp4",
+    ".mkv",
+    ".avi",
+    ".mov",
+    ".wmv",
+    ".flv",
+    ".webm",
+    ".m4v",
+    ".mpg",
+    ".mpeg",
+    ".mp3",
+    ".wav",
+    ".flac",
+    ".aac",
+    ".ogg",
+    ".wma",
+    ".m4a",
+    ".mxf",
 }
 
 # Video extensions for work tracking (used by WorkStatus)
-VIDEO_EXTENSIONS_FOR_WORK = {'.mp4'}
+VIDEO_EXTENSIONS_FOR_WORK = {".mp4"}
 
 
 def should_include_file(filename: str, extension: str) -> bool:
@@ -38,10 +55,7 @@ class ArchiveScanner:
     """Scanner for archive directory"""
 
     def __init__(
-        self,
-        db: AsyncSession,
-        state: Dict[str, Any],
-        scan_type: str = "full"
+        self, db: AsyncSession, state: Dict[str, Any], scan_type: str = "full"
     ):
         self.db = db
         self.state = state
@@ -84,7 +98,9 @@ class ArchiveScanner:
         if self.scan_type == "incremental":
             self.last_scan_time = await self._get_last_scan_time()
             if self.last_scan_time:
-                self._add_log(f"🔄 Incremental scan: checking files since {self.last_scan_time.strftime('%Y-%m-%d %H:%M')}")
+                self._add_log(
+                    f"🔄 Incremental scan: checking files since {self.last_scan_time.strftime('%Y-%m-%d %H:%M')}"
+                )
             else:
                 self._add_log("⚠️ No previous scan found, running full scan")
                 self.scan_type = "full"  # Fallback to full scan
@@ -104,7 +120,9 @@ class ArchiveScanner:
             print(f"Scan error: {e}")
             raise
 
-    async def _scan_directory(self, path: str, depth: int, parent_path: Optional[str] = None):
+    async def _scan_directory(
+        self, path: str, depth: int, parent_path: Optional[str] = None
+    ):
         """Recursively scan a directory"""
         if not self.state.get("is_scanning", True):
             return  # Stop if scan was cancelled
@@ -190,32 +208,39 @@ class ArchiveScanner:
             # Use faster options: read format and stream info, limit probe size
             result = subprocess.run(
                 [
-                    'ffprobe',
-                    '-v', 'error',
-                    '-show_entries', 'format=duration:stream=codec_name,codec_type',
-                    '-of', 'json',
-                    '-probesize', '5000000',  # Limit probe size to 5MB
-                    '-analyzeduration', '5000000',  # Limit analyze duration
-                    file_path
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration:stream=codec_name,codec_type",
+                    "-of",
+                    "json",
+                    "-probesize",
+                    "5000000",  # Limit probe size to 5MB
+                    "-analyzeduration",
+                    "5000000",  # Limit analyze duration
+                    file_path,
                 ],
                 capture_output=True,
                 text=True,
-                timeout=10  # Reduced timeout to 10 seconds
+                timeout=10,  # Reduced timeout to 10 seconds
             )
 
             if result.returncode == 0:
                 data = json.loads(result.stdout)
 
                 # Extract duration
-                result_info["duration"] = float(data.get('format', {}).get('duration', 0))
+                result_info["duration"] = float(
+                    data.get("format", {}).get("duration", 0)
+                )
 
                 # Extract codec info from streams
-                for stream in data.get('streams', []):
-                    codec_type = stream.get('codec_type')
-                    codec_name = stream.get('codec_name')
-                    if codec_type == 'video' and not result_info["video_codec"]:
+                for stream in data.get("streams", []):
+                    codec_type = stream.get("codec_type")
+                    codec_name = stream.get("codec_name")
+                    if codec_type == "video" and not result_info["video_codec"]:
                         result_info["video_codec"] = codec_name
-                    elif codec_type == 'audio' and not result_info["audio_codec"]:
+                    elif codec_type == "audio" and not result_info["audio_codec"]:
                         result_info["audio_codec"] = codec_name
 
         except subprocess.TimeoutExpired:
@@ -244,7 +269,9 @@ class ArchiveScanner:
         if len(self.state["logs"]) > 100:
             self.state["logs"] = self.state["logs"][-100:]
 
-    async def _process_file(self, entry: os.DirEntry, folder_path: str) -> Dict[str, Any]:
+    async def _process_file(
+        self, entry: os.DirEntry, folder_path: str
+    ) -> Dict[str, Any]:
         """Process a single file
 
         In incremental mode, skip files that haven't been modified since last scan.
@@ -281,8 +308,12 @@ class ArchiveScanner:
                     duration = existing.duration
                     video_codec = existing.video_codec
                     audio_codec = existing.audio_codec
-                    self.state["media_files_processed"] = self.state.get("media_files_processed", 0) + 1
-                    self.state["total_duration_found"] = self.state.get("total_duration_found", 0.0) + duration
+                    self.state["media_files_processed"] = (
+                        self.state.get("media_files_processed", 0) + 1
+                    )
+                    self.state["total_duration_found"] = (
+                        self.state.get("total_duration_found", 0.0) + duration
+                    )
                 else:
                     # Run ffprobe in thread pool to not block async loop
                     media_info = await asyncio.get_event_loop().run_in_executor(
@@ -293,13 +324,19 @@ class ArchiveScanner:
                     audio_codec = media_info["audio_codec"]
 
                     # Update shared state for media tracking
-                    self.state["media_files_processed"] = self.state.get("media_files_processed", 0) + 1
-                    self.state["total_duration_found"] = self.state.get("total_duration_found", 0.0) + duration
+                    self.state["media_files_processed"] = (
+                        self.state.get("media_files_processed", 0) + 1
+                    )
+                    self.state["total_duration_found"] = (
+                        self.state.get("total_duration_found", 0.0) + duration
+                    )
 
                     # Log significant media files (every 10 files)
                     if self.state["media_files_processed"] % 10 == 0:
                         hours = self.state["total_duration_found"] / 3600
-                        self._add_log(f"📹 {self.state['media_files_processed']} media files, {hours:.1f}h total")
+                        self._add_log(
+                            f"📹 {self.state['media_files_processed']} media files, {hours:.1f}h total"
+                        )
 
             file_info = {
                 "path": entry.path,
@@ -318,9 +355,9 @@ class ArchiveScanner:
             if existing:
                 # Update existing (if size changed, duration is 0, or codec info missing)
                 needs_update = (
-                    existing.size != stat.st_size or
-                    existing.duration == 0 or
-                    (ext in MEDIA_EXTENSIONS and not existing.video_codec)
+                    existing.size != stat.st_size
+                    or existing.duration == 0
+                    or (ext in MEDIA_EXTENSIONS and not existing.video_codec)
                 )
                 if needs_update:
                     self.files_updated += 1

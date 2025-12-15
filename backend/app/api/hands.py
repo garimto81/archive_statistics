@@ -3,12 +3,14 @@ Hands API - 핸드 분석 데이터 조회 및 동기화
 
 Block: api.hands
 """
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
-from typing import Optional, List
-from pydantic import BaseModel
+
 from datetime import datetime
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.hand_analysis import HandAnalysis
@@ -19,8 +21,10 @@ router = APIRouter()
 
 # ==================== Schemas ====================
 
+
 class HandAnalysisResponse(BaseModel):
     """핸드 분석 응답"""
+
     id: int
     file_name: str
     nas_path: Optional[str]
@@ -42,6 +46,7 @@ class HandAnalysisResponse(BaseModel):
 
 class HandListResponse(BaseModel):
     """핸드 목록 응답"""
+
     items: List[HandAnalysisResponse]
     total_count: int
     worksheets: List[str]
@@ -49,6 +54,7 @@ class HandListResponse(BaseModel):
 
 class FileProgressResponse(BaseModel):
     """파일별 진행률 응답"""
+
     file_name: str
     hand_count: int
     max_timecode_sec: float
@@ -58,6 +64,7 @@ class FileProgressResponse(BaseModel):
 
 class HandSyncStatusResponse(BaseModel):
     """동기화 상태 응답"""
+
     enabled: bool
     status: str
     last_sync: Optional[str]
@@ -69,6 +76,7 @@ class HandSyncStatusResponse(BaseModel):
 
 class HandSyncTriggerResponse(BaseModel):
     """동기화 트리거 응답"""
+
     success: bool
     synced_at: str
     total_records: int
@@ -82,10 +90,13 @@ class HandSyncTriggerResponse(BaseModel):
 
 # ==================== Endpoints ====================
 
+
 @router.get("", response_model=HandListResponse)
 async def get_hands(
     worksheet: Optional[str] = Query(None, description="Filter by worksheet name"),
-    file_name: Optional[str] = Query(None, description="Filter by file name (partial match)"),
+    file_name: Optional[str] = Query(
+        None, description="Filter by file name (partial match)"
+    ),
     grade: Optional[str] = Query(None, description="Filter by hand grade (★, ★★, ★★★)"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
@@ -117,11 +128,15 @@ async def get_hands(
     worksheets = [row[0] for row in ws_result.fetchall() if row[0]]
 
     # 데이터 조회
-    query = query.order_by(
-        HandAnalysis.source_worksheet,
-        HandAnalysis.file_name,
-        HandAnalysis.timecode_in_sec,
-    ).offset(offset).limit(limit)
+    query = (
+        query.order_by(
+            HandAnalysis.source_worksheet,
+            HandAnalysis.file_name,
+            HandAnalysis.timecode_in_sec,
+        )
+        .offset(offset)
+        .limit(limit)
+    )
 
     result = await db.execute(query)
     items = result.scalars().all()
@@ -144,15 +159,19 @@ async def get_hands_by_file(
     - file_name: 파일명
     - 반환: 핸드 목록, 최대 타임코드, 핸드 수
     """
-    query = select(HandAnalysis).where(
-        HandAnalysis.file_name.ilike(f"%{file_name}%")
-    ).order_by(HandAnalysis.timecode_out_sec.desc())
+    query = (
+        select(HandAnalysis)
+        .where(HandAnalysis.file_name.ilike(f"%{file_name}%"))
+        .order_by(HandAnalysis.timecode_out_sec.desc())
+    )
 
     result = await db.execute(query)
     hands = result.scalars().all()
 
     if not hands:
-        raise HTTPException(status_code=404, detail=f"No hands found for file: {file_name}")
+        raise HTTPException(
+            status_code=404, detail=f"No hands found for file: {file_name}"
+        )
 
     max_timecode_sec = max(h.timecode_out_sec for h in hands)
 
@@ -188,18 +207,24 @@ async def get_hands_summary(
 
     # 워크시트별 핸드 수
     ws_query = select(
-        HandAnalysis.source_worksheet,
-        func.count(HandAnalysis.id).label('count')
+        HandAnalysis.source_worksheet, func.count(HandAnalysis.id).label("count")
     ).group_by(HandAnalysis.source_worksheet)
     ws_result = await db.execute(ws_query)
-    by_worksheet = [{"worksheet": row[0], "count": row[1]} for row in ws_result.fetchall()]
+    by_worksheet = [
+        {"worksheet": row[0], "count": row[1]} for row in ws_result.fetchall()
+    ]
 
     # 파일별 핸드 수 (상위 10개)
-    file_query = select(
-        HandAnalysis.file_name,
-        func.count(HandAnalysis.id).label('hand_count'),
-        func.max(HandAnalysis.timecode_out_sec).label('max_timecode')
-    ).group_by(HandAnalysis.file_name).order_by(desc('hand_count')).limit(10)
+    file_query = (
+        select(
+            HandAnalysis.file_name,
+            func.count(HandAnalysis.id).label("hand_count"),
+            func.max(HandAnalysis.timecode_out_sec).label("max_timecode"),
+        )
+        .group_by(HandAnalysis.file_name)
+        .order_by(desc("hand_count"))
+        .limit(10)
+    )
     file_result = await db.execute(file_query)
     top_files = [
         {
@@ -248,6 +273,9 @@ async def trigger_hand_sync():
         updated_count=result.updated_count,
         worksheets_processed=result.worksheets_processed,
         error=result.error,
-        message=f"Successfully synced {result.synced_count} hands from {result.worksheets_processed} worksheets"
-        if result.success else f"Sync failed: {result.error}",
+        message=(
+            f"Successfully synced {result.synced_count} hands from {result.worksheets_processed} worksheets"
+            if result.success
+            else f"Sync failed: {result.error}"
+        ),
     )

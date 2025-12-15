@@ -1,6 +1,7 @@
-from pydantic_settings import BaseSettings
-from typing import Optional, List
 from functools import lru_cache
+from typing import List, Optional
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -44,13 +45,17 @@ class Settings(BaseSettings):
 
     # Archiving Status Sheet (아카이빙 작업 현황)
     # Note: WORK_STATUS_SHEET_URL is deprecated (Issue #37)
-    ARCHIVING_STATUS_SHEET_URL: str = "https://docs.google.com/spreadsheets/d/1xuN4_1mQME_SVwnI7445JuLd8K7tRS9HDNYYJi2fm2k"
+    ARCHIVING_STATUS_SHEET_URL: str = (
+        "https://docs.google.com/spreadsheets/d/1xuN4_1mQME_SVwnI7445JuLd8K7tRS9HDNYYJi2fm2k"
+    )
     WORK_STATUS_SHEET_URL: str = ""  # Deprecated: use ARCHIVING_STATUS_SHEET_URL
 
     # Archive Metadata Sheet (타임코드 메타데이터)
     # Note: HAND_ANALYSIS_* is deprecated (Issue #36)
     ARCHIVE_METADATA_SYNC_ENABLED: bool = True
-    ARCHIVE_METADATA_SHEET_URL: str = "https://docs.google.com/spreadsheets/d/1_RN_W_ZQclSZA0Iez6XniCXVtjkkd5HNZwiT6l-z6d4"
+    ARCHIVE_METADATA_SHEET_URL: str = (
+        "https://docs.google.com/spreadsheets/d/1_RN_W_ZQclSZA0Iez6XniCXVtjkkd5HNZwiT6l-z6d4"
+    )
     HAND_ANALYSIS_SYNC_ENABLED: bool = True  # Deprecated
     HAND_ANALYSIS_SHEET_URL: str = ""  # Deprecated
 

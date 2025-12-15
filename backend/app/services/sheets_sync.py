@@ -6,21 +6,22 @@ Target: work_status 테이블
 
 Block: sync.sheets
 """
+
 import logging
-from datetime import datetime
-from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import gspread
-from google.oauth2.service_account import Credentials
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy.ext.asyncio import AsyncSession
+from google.oauth2.service_account import Credentials
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import async_session_maker
-from app.models.work_status import WorkStatus, Archive
+from app.models.work_status import Archive, WorkStatus
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SyncResult:
     """동기화 결과"""
+
     success: bool
     synced_at: datetime
     total_records: int
@@ -47,7 +49,7 @@ class SheetsSyncService:
     - Work Status 시트 → work_status 테이블 동기화
     """
 
-    SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+    SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
     def __init__(self):
         self.scheduler = AsyncIOScheduler()
@@ -61,7 +63,7 @@ class SheetsSyncService:
     @property
     def next_sync_time(self) -> Optional[datetime]:
         """다음 동기화 예정 시간"""
-        job = self.scheduler.get_job('sheets_sync')
+        job = self.scheduler.get_job("sheets_sync")
         return job.next_run_time if job else None
 
     @property
@@ -85,7 +87,9 @@ class SheetsSyncService:
             # backend 폴더 기준으로도 확인
             sa_path = Path("backend") / settings.GOOGLE_SERVICE_ACCOUNT_FILE
             if not sa_path.exists():
-                logger.error(f"Service account file not found: {settings.GOOGLE_SERVICE_ACCOUNT_FILE}")
+                logger.error(
+                    f"Service account file not found: {settings.GOOGLE_SERVICE_ACCOUNT_FILE}"
+                )
                 self.status = "error"
                 self.last_error = "Service account file not found"
                 return
@@ -93,9 +97,9 @@ class SheetsSyncService:
         try:
             self.scheduler.add_job(
                 self._sync_wrapper,
-                'interval',
+                "interval",
                 minutes=settings.SHEETS_SYNC_INTERVAL_MINUTES,
-                id='sheets_sync',
+                id="sheets_sync",
                 replace_existing=True,
             )
             self.scheduler.start()
@@ -125,11 +129,16 @@ class SheetsSyncService:
         if self._client is None:
             # Service Account 파일 경로 확인 (여러 위치 시도)
             possible_paths = [
-                Path(settings.GOOGLE_SERVICE_ACCOUNT_FILE),  # 환경변수 경로 (Docker: /app/credentials/...)
+                Path(
+                    settings.GOOGLE_SERVICE_ACCOUNT_FILE
+                ),  # 환경변수 경로 (Docker: /app/credentials/...)
                 Path("..") / settings.GOOGLE_SERVICE_ACCOUNT_FILE,  # 상위 디렉토리
                 Path("backend") / settings.GOOGLE_SERVICE_ACCOUNT_FILE,  # backend 하위
-                Path(__file__).parent.parent.parent.parent / settings.GOOGLE_SERVICE_ACCOUNT_FILE,  # 프로젝트 루트
-                Path("/app/credentials/service_account_key.json"),  # Docker 컨테이너 내 절대 경로
+                Path(__file__).parent.parent.parent.parent
+                / settings.GOOGLE_SERVICE_ACCOUNT_FILE,  # 프로젝트 루트
+                Path(
+                    "/app/credentials/service_account_key.json"
+                ),  # Docker 컨테이너 내 절대 경로
             ]
 
             sa_path = None
@@ -203,15 +212,17 @@ class SheetsSyncService:
                     record = {headers[i]: row[i] for i in range(len(headers))}
 
                     # 병합 셀 처리: Archive가 비어있으면 이전 값 사용
-                    current_archive = str(record.get('Archive', '')).strip()
+                    current_archive = str(record.get("Archive", "")).strip()
                     if current_archive:
                         last_archive = current_archive
                     else:
-                        record['Archive'] = last_archive
+                        record["Archive"] = last_archive
 
                     records.append(record)
 
-            logger.info(f"Fetched {len(records)} records from sheets (headers: {headers})")
+            logger.info(
+                f"Fetched {len(records)} records from sheets (headers: {headers})"
+            )
 
             # 2. DB 동기화
             async with async_session_maker() as db:
@@ -281,8 +292,8 @@ class SheetsSyncService:
         for record in records:
             try:
                 # 빈 행 스킵 (Archive 또는 Category가 비어있으면 스킵)
-                archive_name = str(record.get('Archive', '')).strip()
-                category = str(record.get('Category', '')).strip()
+                archive_name = str(record.get("Archive", "")).strip()
+                category = str(record.get("Category", "")).strip()
                 if not archive_name or not category:
                     continue
 
@@ -305,14 +316,14 @@ class SheetsSyncService:
 
                 # 데이터 파싱 (정규화된 헤더 이름 사용)
                 # PIC에 줄바꿈이 있을 수 있으므로 정리
-                pic_raw = str(record.get('PIC', '')).strip()
-                pic = ' '.join(pic_raw.split()) if pic_raw else None
+                pic_raw = str(record.get("PIC", "")).strip()
+                pic = " ".join(pic_raw.split()) if pic_raw else None
 
-                status = self._normalize_status(str(record.get('Status', '대기')))
-                total_videos = self._parse_int(record.get('Total', 0))
-                excel_done = self._parse_int(record.get('Excel Done', 0))
-                notes1 = str(record.get('Notes 1', '')).strip() or None
-                notes2 = str(record.get('Notes 2', '')).strip() or None
+                status = self._normalize_status(str(record.get("Status", "대기")))
+                total_videos = self._parse_int(record.get("Total", 0))
+                excel_done = self._parse_int(record.get("Excel Done", 0))
+                notes1 = str(record.get("Notes 1", "")).strip() or None
+                notes2 = str(record.get("Notes 2", "")).strip() or None
 
                 if existing:
                     # 업데이트
@@ -361,9 +372,7 @@ class SheetsSyncService:
         name: str,
     ) -> Archive:
         """Archive 조회 또는 생성"""
-        result = await db.execute(
-            select(Archive).where(Archive.name == name)
-        )
+        result = await db.execute(select(Archive).where(Archive.name == name))
         archive = result.scalar_one_or_none()
 
         if not archive:
@@ -377,10 +386,10 @@ class SheetsSyncService:
     def _normalize_header(self, header: str) -> str:
         """헤더 이름 정규화 (줄바꿈 제거, 공백 정리)"""
         # 줄바꿈을 공백으로 변환 후 정리
-        normalized = ' '.join(header.split())
+        normalized = " ".join(header.split())
         # 괄호 내용 제거 (예: "Total (# of videos)" → "Total")
-        if '(' in normalized:
-            normalized = normalized.split('(')[0].strip()
+        if "(" in normalized:
+            normalized = normalized.split("(")[0].strip()
         return normalized
 
     def _normalize_status(self, status: str) -> str:
@@ -395,30 +404,30 @@ class SheetsSyncService:
         2. 키워드 매칭 실패 시 원본 반환
         """
         if not status:
-            return '대기'
+            return "대기"
 
         status_map = {
-            '대기': '대기',
-            'waiting': '대기',
-            'pending': '대기',
-            '작업 중': '작업 중',
-            '작업중': '작업 중',
-            '진행 중': '작업 중',
-            '진행중': '작업 중',
-            '작업 中': '작업 중',
-            '작업中': '작업 중',
-            'in progress': '작업 중',
-            'working': '작업 중',
-            '검토': '검토',
-            'review': '검토',
-            '완료': '완료',
-            'done': '완료',
-            'complete': '완료',
-            'completed': '완료',
+            "대기": "대기",
+            "waiting": "대기",
+            "pending": "대기",
+            "작업 중": "작업 중",
+            "작업중": "작업 중",
+            "진행 중": "작업 중",
+            "진행중": "작업 중",
+            "작업 中": "작업 중",
+            "작업中": "작업 중",
+            "in progress": "작업 중",
+            "working": "작업 중",
+            "검토": "검토",
+            "review": "검토",
+            "완료": "완료",
+            "done": "완료",
+            "complete": "완료",
+            "completed": "완료",
         }
 
         # 줄바꿈으로 분리하여 각 부분 검사
-        parts = status.replace('\n', ' ').split()
+        parts = status.replace("\n", " ").split()
 
         # 전체 문자열에서 키워드 매칭 시도
         status_lower = status.lower().strip()
@@ -431,16 +440,16 @@ class SheetsSyncService:
                 return value
 
         # 매칭 실패 시 빈 값이면 기본값, 아니면 원본 유지
-        return status.strip() if status.strip() else '대기'
+        return status.strip() if status.strip() else "대기"
 
     def _parse_int(self, value: Any) -> int:
         """정수 파싱 (빈 값, 문자열 처리)"""
-        if value is None or value == '':
+        if value is None or value == "":
             return 0
         try:
             # 콤마 제거 후 파싱
             if isinstance(value, str):
-                value = value.replace(',', '').strip()
+                value = value.replace(",", "").strip()
             return int(float(value))
         except (ValueError, TypeError):
             return 0
@@ -450,16 +459,24 @@ class SheetsSyncService:
         return {
             "enabled": self.is_enabled,
             "status": self.status,
-            "last_sync": self.last_sync_time.isoformat() if self.last_sync_time else None,
-            "next_sync": self.next_sync_time.isoformat() if self.next_sync_time else None,
+            "last_sync": (
+                self.last_sync_time.isoformat() if self.last_sync_time else None
+            ),
+            "next_sync": (
+                self.next_sync_time.isoformat() if self.next_sync_time else None
+            ),
             "error": self.last_error,
             "interval_minutes": settings.SHEETS_SYNC_INTERVAL_MINUTES,
-            "last_result": {
-                "total_records": self.last_sync_result.total_records,
-                "synced_count": self.last_sync_result.synced_count,
-                "created_count": self.last_sync_result.created_count,
-                "updated_count": self.last_sync_result.updated_count,
-            } if self.last_sync_result else None,
+            "last_result": (
+                {
+                    "total_records": self.last_sync_result.total_records,
+                    "synced_count": self.last_sync_result.synced_count,
+                    "created_count": self.last_sync_result.created_count,
+                    "updated_count": self.last_sync_result.updated_count,
+                }
+                if self.last_sync_result
+                else None
+            ),
         }
 
 
